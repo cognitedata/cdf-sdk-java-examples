@@ -3,9 +3,10 @@ package com.cognite.sa.api;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.inject.Inject;
 import javax.ws.rs.*;
 import javax.ws.rs.core.MediaType;
-import java.time.Instant;
+import javax.ws.rs.core.Response;
 
 /**
  * Class that defines the HTTP endpoints for the copy table resource / functionality.
@@ -16,9 +17,11 @@ import java.time.Instant;
 public class CopyTableResource {
     private static final Logger LOG = LoggerFactory.getLogger(CopyTableResource.class);
 
+    @Inject
+    CopyTableService copyService;
+
     @POST
     public CopyTableResponse postCopy(CopyTableRequest copyRequest) {
-        Instant startInstant = Instant.now();
         if (copyRequest == null) {
             throw new BadRequestException();
         }
@@ -27,18 +30,25 @@ public class CopyTableResource {
                 || copyRequest.targetTable == null) {
             String message = "Request does not contain the required fields.";
             LOG.warn(message);
-            throw new BadRequestException(message);
+            throw new BadRequestException(Response.status(Response.Status.BAD_REQUEST)
+                    .entity(new ErrorResponse(message)).type(MediaType.APPLICATION_JSON)
+                    .build());
         }
 
-        CopyTableResponse response = new CopyTableResponse();
-        response.message = "good response";
-        return response;
+        try {
+            return copyService.copyTable(copyRequest);
+        } catch (Exception e) {
+            LOG.warn(e.getMessage());
+            throw new BadRequestException(Response.status(Response.Status.BAD_REQUEST)
+                    .entity(new ErrorResponse(e.getMessage())).type(MediaType.APPLICATION_JSON)
+                    .build());
+        }
     }
 
     @GET
     public CopyTableResponse getCopy() {
         CopyTableResponse response = new CopyTableResponse();
-        response.message = "good response";
+        response.message = "The service is alive--but no copy operation has been performed.";
         return response;
     }
 }

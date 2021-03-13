@@ -1,4 +1,13 @@
-# code-with-quarkus project
+# Java SDK example: REST service, copy Raw tables
+This is an example of how to build a REST service based on the CDF Java SDK. 
+
+We use Quarkus (https://quarkus.io/) as the framework for exposing the REST endpoints. 
+This gives us out of the box handling of packaging (as a container), endpoints, logging, configuration, 
+metrics, openapi spec, and more. 
+
+The example service uses the Java SDK to copy all rows from one CDF Raw table to another. 
+
+## code-with-quarkus project
 
 This project uses Quarkus, the Supersonic Subatomic Java Framework.
 
