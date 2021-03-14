@@ -31,6 +31,13 @@
         <type>pom</type>
         <scope>import</scope>
       </dependency>
+      <dependency>
+        <groupId>com.google.cloud</groupId>
+        <artifactId>libraries-bom</artifactId>
+        <version>19.0.0</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
     </dependencies>
   </dependencyManagement>
   <dependencies>
@@ -38,6 +45,10 @@
       <groupId>com.cognite</groupId>
       <artifactId>cdf-sdk-java</artifactId>
       <version>${cdf-sdk-java.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.google.cloud</groupId>
+      <artifactId>google-cloud-secretmanager</artifactId>
     </dependency>
     <dependency>
       <groupId>io.quarkus</groupId>
