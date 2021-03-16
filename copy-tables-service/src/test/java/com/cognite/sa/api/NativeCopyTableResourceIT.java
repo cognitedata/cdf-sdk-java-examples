@@ -1,9 +1,9 @@
-package org.acme;
+package com.cognite.sa.api;
 
 import io.quarkus.test.junit.NativeImageTest;
 
 @NativeImageTest
-public class NativeReactiveGreetingResourceIT extends ReactiveGreetingResourceTest {
+public class NativeCopyTableResourceIT extends CopyTableResourceTest {
 
     // Execute the same tests but in native mode.
 }

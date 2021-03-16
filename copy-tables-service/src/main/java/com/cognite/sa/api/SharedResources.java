@@ -10,9 +10,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.enterprise.context.ApplicationScoped;
-import javax.ws.rs.Produces;
 import java.io.IOException;
-import java.util.Optional;
 
 /**
  * This class hosts shared resources for all services.
@@ -23,25 +21,41 @@ import java.util.Optional;
  */
 @ApplicationScoped
 public class SharedResources {
-    private static Logger LOG = LoggerFactory.getLogger(SharedResources.class);
+    private final static Logger LOG = LoggerFactory.getLogger(SharedResources.class);
+    private final static String UNSET = "unset";
 
     @ConfigProperty(name = "cdf.key.env")
-    Optional<String> apiKey;
+    String apiKey;
 
     @ConfigProperty(name = "cdf.key.secret-manager")
-    Optional<String> secretUri;
+    String secretUri;
 
     @ConfigProperty(name = "cdf.base-url")
     String baseURL;
 
     private CogniteClient client;
 
-    @Produces
-    public CogniteClient getClient() {
+    //@ApplicationScoped
+    //@Produces
+    synchronized CogniteClient getClient() throws Exception {
         if (client == null) {
             // Instantiate the client
-
-
+            LOG.info("Start instantiate the Cognite Client.");
+            if (!apiKey.equals(UNSET)) {
+                LOG.info("API key read from env variable.");
+                client = CogniteClient.ofKey(apiKey)
+                        .withBaseUrl(baseURL);
+            } else if (!secretUri.equals(UNSET)) {
+                LOG.info("API key is hosted in Secret Manager.");
+                String projectId = secretUri.split("\\.")[0];
+                String secretId = secretUri.split("\\.")[1];
+                client = CogniteClient.ofKey(getGcpSecret(projectId, secretId, "latest"))
+                        .withBaseUrl(baseURL);
+            } else {
+                String message = "API key is not configured.";
+                LOG.error(message);
+                throw new Exception(message);
+            }
         }
 
         return client;
