@@ -1,5 +1,6 @@
 package com.cognite.sa.api;
 
+import io.smallrye.common.annotation.Blocking;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -20,6 +21,7 @@ public class CopyTableResource {
     @Inject
     CopyTableService copyService;
 
+    @Blocking
     @POST
     public CopyTableResponse postCopy(CopyTableRequest copyRequest) {
         if (copyRequest == null) {
