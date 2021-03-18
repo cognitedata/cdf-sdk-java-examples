@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rabbitmq-to-pubsub-extractor-dev
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rabbitmq-to-pubsub-extractor-dev
+  template:
+    metadata:
+      labels:
+        app: rabbitmq-to-pubsub-extractor-dev
+    spec:
+      containers:
+      - name: server
+        image: europe-west1-docker.pkg.dev/akerbp-eureka-sa-sandbox/containers/rabbitmq-to-pubsub-extractor
+        ports:
+        - containerPort: 9090
+        env:
+        - name: DATASET_EXT_ID
+          value: "myExtId"
+        - name: CDF_API_KEY_SECRET_MANAGER
+          value: "919896902461.backbone-rabbitmq-password-dev"
+        # This environment variable enables debugging support for the container.
+        # Remove this to disable the debug build.
+        #- name: JAVA_TOOL_OPTIONS
+        #  value: -agentlib:jdwp=transport=dt_socket,server=y,address=5005,suspend=n,quiet=y
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "1000m"
+          limits:
+            memory: "2Gi"
+            cpu: "1500m"
+      serviceAccountName: extractor-default
