@@ -7,12 +7,11 @@ build:
     sha256: { }
     # defines where to find the code at build time and where to push the resulting image
   artifacts:
-  - image: europe-west1-docker.pkg.dev/akerbp-eureka-sa-sandbox/containers/raw-clean-batch
+  - image: europe-west1-docker.pkg.dev/akerbp-eureka-sa-sandbox/containers/rabbitmq-to-pubsub-extractor
     context: .
     jib:
       project: com.cognite:cdf-sdk-java-example-raw-clean-batch
 deploy:
   kubectl:
     manifests:
-    - kubernetes-manifests/*.yaml
-    #defaultNamespace: dev
+    - kubernetes-manifests/raw-clean-batch.deployment.yaml
