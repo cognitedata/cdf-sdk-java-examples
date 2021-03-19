@@ -18,6 +18,8 @@ spec:
         ports:
         - containerPort: 9090
         env:
+        - name: RAW_DB
+          value: "myDb.myTable"
         - name: DATASET_EXT_ID
           value: "myExtId"
         - name: CDF_API_KEY_SECRET_MANAGER
