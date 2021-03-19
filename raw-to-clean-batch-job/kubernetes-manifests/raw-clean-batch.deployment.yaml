@@ -6,15 +6,15 @@ spec:
   replicas: 1
   selector:
     matchLabels:
-      app: rabbitmq-to-pubsub-extractor-dev
+      app: raw-to-clean-batch-job
   template:
     metadata:
       labels:
-        app: rabbitmq-to-pubsub-extractor-dev
+        app: raw-to-clean-batch-job
     spec:
       containers:
       - name: server
-        image: europe-west1-docker.pkg.dev/akerbp-eureka-sa-sandbox/containers/rabbitmq-to-pubsub-extractor
+        image: europe-west1-docker.pkg.dev/akerbp-eureka-sa-sandbox/containers/raw-to-clean-batch-job
         ports:
         - containerPort: 9090
         env:
@@ -33,4 +33,4 @@ spec:
           limits:
             memory: "2Gi"
             cpu: "1500m"
-      serviceAccountName: extractor-default
+      #serviceAccountName: extractor-default
