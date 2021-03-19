@@ -1,19 +1,25 @@
 package com.cognite.examples;
 
 import com.cognite.client.CogniteClient;
+import com.cognite.client.dto.Event;
 import com.cognite.client.dto.RawRow;
 import com.google.cloud.secretmanager.v1.AccessSecretVersionRequest;
 import com.google.cloud.secretmanager.v1.AccessSecretVersionResponse;
 import com.google.cloud.secretmanager.v1.SecretManagerServiceClient;
 import com.google.cloud.secretmanager.v1.SecretVersionName;
+import com.google.protobuf.StringValue;
+import com.google.protobuf.Value;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.AbstractMap;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 public class RawToClean {
     private static Logger LOG = LoggerFactory.getLogger(RawToClean.class);
@@ -29,9 +35,30 @@ public class RawToClean {
 
         CogniteClient client = getClient();
 
+        // Set up the reader for the raw table
         Iterator<List<RawRow>> iterator = client.raw().rows().list(dbName, dbTable);
-        while (iterator.hasNext()) {
 
+        // Iterate through all rows in batches and write to clean. This will effectively "stream" through
+        // the data so that we have constant memory usage no matter how large the data set is.
+        while (iterator.hasNext()) {
+            List<Event> events = iterator.next().stream()
+                    .map(row -> {
+                        // Collect all columns into the metadata bucket of the event
+                        Map<String, String> metadata = row.getColumns().getFieldsMap().entrySet().stream()
+                                .collect(Collectors.toMap((Map.Entry<String, Value> entry) -> entry.getKey(),
+                                        entry -> entry.getValue().getStringValue()));
+
+                        // Build the event object
+                        return Event.newBuilder()
+                                .setExternalId(StringValue.of(row.getTableName() + row.getKey()))
+                                .setDescription(StringValue.of(row.getColumns().getFieldsOrThrow("description").getStringValue()))
+                                .putAllMetadata(metadata)
+                                .build();
+                    })
+                    .collect(Collectors.toList());
+
+            client.events().upsert(events);
+            countRows += events.size();
         }
 
         LOG.info("Finished processing {} rows from raw. Duration {}",
