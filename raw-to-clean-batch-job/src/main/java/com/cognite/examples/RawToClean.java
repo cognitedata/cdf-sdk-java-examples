@@ -1,12 +1,16 @@
 package com.cognite.examples;
 
 import com.cognite.client.CogniteClient;
+import com.cognite.client.dto.DataSet;
 import com.cognite.client.dto.Event;
+import com.cognite.client.dto.Item;
 import com.cognite.client.dto.RawRow;
 import com.google.cloud.secretmanager.v1.AccessSecretVersionRequest;
 import com.google.cloud.secretmanager.v1.AccessSecretVersionResponse;
 import com.google.cloud.secretmanager.v1.SecretManagerServiceClient;
 import com.google.cloud.secretmanager.v1.SecretVersionName;
+import com.google.common.collect.ImmutableList;
+import com.google.protobuf.Int64Value;
 import com.google.protobuf.StringValue;
 import com.google.protobuf.Value;
 import org.slf4j.Logger;
@@ -15,10 +19,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.AbstractMap;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 
 public class RawToClean {
@@ -35,7 +36,30 @@ public class RawToClean {
 
         CogniteClient client = getClient();
 
+        // Get the data set id
+        String dataSetExternalId = System.getenv("DATASET_EXT_ID");
+        if (null == dataSetExternalId) {
+            // The data set external id is not set.
+            String message = "DATASET_EXT_ID is not configured.";
+            LOG.error(message);
+            throw new Exception(message);
+        }
+        LOG.info("Looking up the data set external id: {}.",
+                dataSetExternalId);
+        List<DataSet> dataSets = client.datasets()
+                .retrieve(ImmutableList.of(Item.newBuilder().setExternalId(dataSetExternalId).build()));
+
+        if (dataSets.size() != 1) {
+            // The provided data set external id cannot be found.
+            String message = String.format("The configured data set external id does not exist: %s", dataSetExternalId);
+            LOG.error(message);
+            throw new Exception(message);
+        }
+
         // Set up the reader for the raw table
+        LOG.info("Starting to read the raw table {}.{}.",
+                dbName,
+                dbTable);
         Iterator<List<RawRow>> iterator = client.raw().rows().list(dbName, dbTable);
 
         // Iterate through all rows in batches and write to clean. This will effectively "stream" through
@@ -48,11 +72,17 @@ public class RawToClean {
                                 .collect(Collectors.toMap((Map.Entry<String, Value> entry) -> entry.getKey(),
                                         entry -> entry.getValue().getStringValue()));
 
+                        // Add basic lineage info
+                        metadata.put("dataSource",
+                                String.format("%s.%s.%s", row.getDbName(), row.getTableName(), row.getKey()));
+
                         // Build the event object
                         return Event.newBuilder()
                                 .setExternalId(StringValue.of(row.getTableName() + row.getKey()))
-                                .setDescription(StringValue.of(row.getColumns().getFieldsOrThrow("description").getStringValue()))
+                                .setDescription(StringValue.of(
+                                        row.getColumns().getFieldsOrThrow("FUNCTION CODE DESCRIPTION").getStringValue()))
                                 .putAllMetadata(metadata)
+                                .setDataSetId(dataSets.get(0).getId())
                                 .build();
                     })
                     .collect(Collectors.toList());
@@ -82,7 +112,7 @@ public class RawToClean {
 
     /*
     Read secrets from GCP Secret Manager.
-    Since we are using workload identity on GKE, we have to take into account that the identity metadata
+    If we are using workload identity on GKE, we have to take into account that the identity metadata
     service for the pod may take a few seconds to initialize. Therefore the implicit call to get
     identity may fail if it happens at the very start of the pod. The workaround is to perform a
     retry.

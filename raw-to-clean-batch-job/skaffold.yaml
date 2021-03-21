@@ -1,19 +1,14 @@
 apiVersion: skaffold/v2beta13
 kind: Config
-metadata:
-  name: raw-to-clean-batch-job
 build:
-  local:
-    push: false
   tagPolicy:
-    sha256: { }
+    sha256: {}
     # defines where to find the code at build time and where to push the resulting image
   artifacts:
-  - image: raw-to-clean-batch-job
+  - image: europe-west1-docker.pkg.dev/akerbp-eureka-sa-sandbox/containers/raw-to-clean-batch-job
     context: .
-    jib:
-      project: com.cognite:cdf-sdk-java-example-raw-clean-batch
+    jib: {}
 deploy:
   kubectl:
     manifests:
-    - kubernetes-manifests/raw-clean-batch.deployment.yaml
+    - kubernetes-manifests/raw-clean-batch.job.yaml

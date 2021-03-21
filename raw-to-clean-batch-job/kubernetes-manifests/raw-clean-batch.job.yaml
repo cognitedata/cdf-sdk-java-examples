@@ -1,29 +1,22 @@
-apiVersion: apps/v1
-kind: Deployment
+apiVersion: batch/v1
+kind: Job
 metadata:
-  name: rabbitmq-to-pubsub-extractor-dev
+  name: raw-to-clean-batch-job
 spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: raw-to-clean-batch-job
   template:
-    metadata:
-      labels:
-        app: raw-to-clean-batch-job
     spec:
       containers:
-      - name: server
+      - name: raw-to-clean-batch-job
         image: europe-west1-docker.pkg.dev/akerbp-eureka-sa-sandbox/containers/raw-to-clean-batch-job
         ports:
         - containerPort: 9090
         env:
         - name: RAW_DB
-          value: "myDb.myTable"
+          value: "kjetilh-dev.val-stage1-copy"
         - name: DATASET_EXT_ID
-          value: "myExtId"
+          value: "dataset:kjetilh-dev"
         - name: CDF_API_KEY_SECRET_MANAGER
-          value: "919896902461.backbone-rabbitmq-password-dev"
+          value: "919896902461.akerbp-dev-kjetilh"
         # This environment variable enables debugging support for the container.
         # Remove this to disable the debug build.
         #- name: JAVA_TOOL_OPTIONS
@@ -34,5 +27,6 @@ spec:
             cpu: "1000m"
           limits:
             memory: "2Gi"
-            cpu: "1500m"
-      #serviceAccountName: extractor-default
+            cpu: "1000m"
+      restartPolicy: Never
+      serviceAccountName: transform-default
