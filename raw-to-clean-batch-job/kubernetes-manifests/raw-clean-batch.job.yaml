@@ -1,0 +1,32 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: raw-to-clean-batch-job
+spec:
+  template:
+    spec:
+      containers:
+      - name: raw-to-clean-batch-job
+        image: raw-to-clean-batch-job
+        ports:
+        - containerPort: 9090
+        env:
+        - name: RAW_DB
+          value: "rawDb.rawTable"
+        - name: DATASET_EXT_ID
+          value: "my-data-set-external-id"
+        - name: CDF_API_KEY_SECRET_MANAGER
+          value: "myProject.my-key"
+        # This environment variable enables debugging support for the container.
+        # Remove this to disable the debug build.
+        #- name: JAVA_TOOL_OPTIONS
+        #  value: -agentlib:jdwp=transport=dt_socket,server=y,address=5005,suspend=n,quiet=y
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "1000m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+      restartPolicy: Never
+      serviceAccountName: transform-default
