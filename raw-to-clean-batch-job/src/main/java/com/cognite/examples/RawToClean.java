@@ -80,7 +80,7 @@ public class RawToClean {
                         return Event.newBuilder()
                                 .setExternalId(StringValue.of(row.getTableName() + row.getKey()))
                                 .setDescription(StringValue.of(
-                                        row.getColumns().getFieldsOrThrow("FUNCTION CODE DESCRIPTION").getStringValue()))
+                                        row.getColumns().getFieldsOrThrow("my-mandatory-field").getStringValue()))
                                 .putAllMetadata(metadata)
                                 .setDataSetId(dataSets.get(0).getId())
                                 .build();

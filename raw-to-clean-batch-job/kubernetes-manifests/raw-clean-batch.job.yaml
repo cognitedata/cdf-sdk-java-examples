@@ -7,16 +7,16 @@ spec:
     spec:
       containers:
       - name: raw-to-clean-batch-job
-        image: europe-west1-docker.pkg.dev/akerbp-eureka-sa-sandbox/containers/raw-to-clean-batch-job
+        image: raw-to-clean-batch-job
         ports:
         - containerPort: 9090
         env:
         - name: RAW_DB
-          value: "kjetilh-dev.val-stage1-copy"
+          value: "rawDb.rawTable"
         - name: DATASET_EXT_ID
-          value: "dataset:kjetilh-dev"
+          value: "my-data-set-external-id"
         - name: CDF_API_KEY_SECRET_MANAGER
-          value: "919896902461.akerbp-dev-kjetilh"
+          value: "myProject.my-key"
         # This environment variable enables debugging support for the container.
         # Remove this to disable the debug build.
         #- name: JAVA_TOOL_OPTIONS

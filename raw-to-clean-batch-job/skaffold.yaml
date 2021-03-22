@@ -5,7 +5,7 @@ build:
     sha256: {}
     # defines where to find the code at build time and where to push the resulting image
   artifacts:
-  - image: europe-west1-docker.pkg.dev/akerbp-eureka-sa-sandbox/containers/raw-to-clean-batch-job
+  - image: raw-to-clean-batch-job
     context: .
     jib: {}
 deploy:
