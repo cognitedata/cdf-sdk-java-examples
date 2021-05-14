@@ -13,6 +13,7 @@
         <maven.compiler.target>11</maven.compiler.target>
 
         <cdf-sdk-java.version>0.9.6</cdf-sdk-java.version>
+        <pdfbox.version>2.0.23</pdfbox.version>
         <jib.maven.plugin.version>2.8.0</jib.maven.plugin.version>
     </properties>
 
@@ -37,6 +38,11 @@
         <dependency>
             <groupId>com.google.cloud</groupId>
             <artifactId>google-cloud-secretmanager</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>pdfbox</artifactId>
+            <version>${pdfbox.version}</version>
         </dependency>
         <dependency>
             <groupId>ch.qos.logback</groupId>

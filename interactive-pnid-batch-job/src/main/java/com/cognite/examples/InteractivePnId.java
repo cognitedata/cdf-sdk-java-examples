@@ -1,16 +1,14 @@
 package com.cognite.examples;
 
 import com.cognite.client.CogniteClient;
-import com.cognite.client.dto.DataSet;
-import com.cognite.client.dto.Event;
-import com.cognite.client.dto.Item;
-import com.cognite.client.dto.RawRow;
+import com.cognite.client.Request;
+import com.cognite.client.dto.*;
 import com.google.cloud.secretmanager.v1.AccessSecretVersionRequest;
 import com.google.cloud.secretmanager.v1.AccessSecretVersionResponse;
 import com.google.cloud.secretmanager.v1.SecretManagerServiceClient;
 import com.google.cloud.secretmanager.v1.SecretVersionName;
-import com.google.common.collect.ImmutableList;
 import com.google.protobuf.StringValue;
+import com.google.protobuf.Struct;
 import com.google.protobuf.Value;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -24,42 +22,82 @@ import java.util.stream.Collectors;
 public class InteractivePnId {
     private static Logger LOG = LoggerFactory.getLogger(InteractivePnId.class);
     private final static String baseURL = "https://api.cognitedata.com";
+    private final static String fileNameSuffixRegEx = "\\.[a-zA-Z]{1,4}$";
+    private static String appIdentifier = "my-interactive-pnid-pipeline";
+
+    /* Pipeline config parameters */
+    // filters to select the source P&IDs
+    private final static String fileSourceDataSetExternalId = "dataset:d2-lci-files";
+    private final static String fileSourceFilterMetadataKey = "DOCUMENT TYPE CODE";
+    private final static String fileSourceFilterMetadataValue = "XB";
+
+    // filters to select the assets to use as lookup values for the P&ID service
+    private final static String assetDataSetExternalId = "dataset:aveva-net-assets";
+
+    // the target data set for the interactive P&IDs
+    private final static String fileTargetDataSetExternalId = "dataset:d2-interactive-pnids";
+
+    //
+    private final static String fileTechLocationMetadataKey = "document:abp_tech_location";
+
+    private static CogniteClient client = null;
 
     public static void main(String[] args) throws Exception {
         Instant startInstant = Instant.now();
-        int countRows = 0;
+        int countFiles = 0;
 
-        // Get the source table via env variables
-        String dbName = System.getenv("RAW_DB").split("\\.")[0];
-        String dbTable = System.getenv("RAW_DB").split("\\.")[1];
+        // Read the assets which we'll use as a basis for looking up entities in the P&ID
+        LOG.info("Start downloading assets.");
+        List<Asset> assetsResults = readAssets();
+        LOG.info("Finished downloading {} assets. Duration: {}",
+                assetsResults.size(),
+                Duration.between(startInstant, Instant.now()));
 
-        CogniteClient client = getClient();
+        /*
+        We need to construct the actual lookup entities. This is input to the
+        P&ID service and guides how entities are detected in the P&ID.
+        For example, if you want to take spelling variations into account, then this is
+        the place you would add that configuration.
+         */
+        LOG.info("Start building detect entities struct.");
+        List<Struct> matchToEntities = new ArrayList<>();
+        for (Asset asset : assetsResults) {
+            Struct matchTo = Struct.newBuilder()
+                    .putFields("externalId", Value.newBuilder()
+                            .setStringValue(asset.getExternalId().getValue())
+                            .build())
+                    .putFields("name", Value.newBuilder()
+                            .setStringValue(asset.getName())
+                            .build())
+                    .putFields("resourceType", Value.newBuilder()
+                            .setStringValue("Asset")
+                            .build())
+                    .build();
 
-        // Get the data set id
-        String dataSetExternalId = System.getenv("DATASET_EXT_ID");
-        if (null == dataSetExternalId) {
-            // The data set external id is not set.
-            String message = "DATASET_EXT_ID is not configured.";
-            LOG.error(message);
-            throw new Exception(message);
+            matchToEntities.add(matchTo);
         }
-        LOG.info("Looking up the data set external id: {}.",
-                dataSetExternalId);
-        List<DataSet> dataSets = client.datasets()
-                .retrieve(ImmutableList.of(Item.newBuilder().setExternalId(dataSetExternalId).build()));
+        LOG.info("Finished building detect entities struct. Duration: {}",
+                Duration.between(startInstant, Instant.now()));
 
-        if (dataSets.size() != 1) {
-            // The provided data set external id cannot be found.
-            String message = String.format("The configured data set external id does not exist: %s", dataSetExternalId);
-            LOG.error(message);
-            throw new Exception(message);
-        }
+        /*
+        Build the list of files to run through the interactive P&ID process. The P&ID service has
+        some restrictions on which file types it supports, so you should make sure to include
+        only valid file types.
 
-        // Set up the reader for the raw table
-        LOG.info("Starting to read the raw table {}.{}.",
-                dbName,
-                dbTable);
-        Iterator<List<RawRow>> iterator = client.raw().rows().list(dbName, dbTable);
+        In this case we'll filter on PDFs. Since some sources
+         */
+        LOG.info("Start detect and convert.");
+        Item file = Item.newBuilder()
+                .setExternalId("D2:ID:0903d6c1801112e8:pdf")
+                .build();
+
+        List<PnIDResponse> detectResults = client.experimental()
+                .pnid()
+                .detectAnnotationsPnID(List.<Item>of(file), entities, "name", true);
+
+        LOG.info("Finished Start detect and convert.. Duration: {}",
+                Duration.between(startInstant, Instant.now()));
+
 
         // Iterate through all rows in batches and write to clean. This will effectively "stream" through
         // the data so that we have constant memory usage no matter how large the data set is.
@@ -90,8 +128,8 @@ public class InteractivePnId {
             countRows += events.size();
         }
 
-        LOG.info("Finished processing {} rows from raw. Duration {}",
-                countRows,
+        LOG.info("Finished processing {} files. Duration {}",
+                countFiles,
                 Duration.between(startInstant, Instant.now()));
     }
 
@@ -99,14 +137,48 @@ public class InteractivePnId {
     Instantiate the cognite client based on an api key hosted in GCP Secret Manager (key vault).
      */
     private static CogniteClient getClient() throws Exception {
-        // Instantiate the client
-        LOG.info("Start instantiate the Cognite Client.");
+        if (null == client) {
+            // Instantiate the client
+            LOG.info("Start instantiate the Cognite Client.");
 
-        LOG.info("API key is hosted in Secret Manager.");
-        String projectId = System.getenv("CDF_API_KEY_SECRET_MANAGER").split("\\.")[0];
-        String secretId = System.getenv("CDF_API_KEY_SECRET_MANAGER").split("\\.")[1];
-        return CogniteClient.ofKey(getGcpSecret(projectId, secretId, "latest"))
-                .withBaseUrl(baseURL);
+            LOG.info("API key is hosted in Secret Manager.");
+            String projectId = System.getenv("CDF_API_KEY_SECRET_MANAGER").split("\\.")[0];
+            String secretId = System.getenv("CDF_API_KEY_SECRET_MANAGER").split("\\.")[1];
+
+            client = CogniteClient.ofKey(getGcpSecret(projectId, secretId, "latest"))
+                    .withBaseUrl(baseURL);
+        }
+
+        return client;
+    }
+
+    /*
+    Read the assets collection and minimize the asset objects.
+     */
+    private static List<Asset> readAssets() throws Exception {
+        List<Asset> assetResults = new ArrayList<>();
+
+        // Read assets based on a list filter. The SDK client gives you an iterator back
+        // that lets you "stream" batches of results.
+        Iterator<List<Asset>> resultsIterator = getClient().assets().list(Request.create()
+                .withFilterParameter("dataSetIds", List.of(
+                        Map.of("externalId", assetDataSetExternalId))
+                )
+                .withFilterMetadataParameter("FACILITY", "ULA")
+        );
+
+        // Read the asset results, one batch at a time.
+        resultsIterator.forEachRemaining(assets -> {
+            for (Asset asset : assets) {
+                // we break out the results batch and process each individual result.
+                // In this case we want minimize the size of the asset collection
+                // by removing the metadata bucket (we don't need all that metadata for
+                // our processing.
+                assetResults.add(asset.toBuilder().clearMetadata().build());
+            }
+        });
+
+        return assetResults;
     }
 
     /*
