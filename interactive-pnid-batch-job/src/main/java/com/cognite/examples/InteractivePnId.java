@@ -3,17 +3,23 @@ package com.cognite.examples;
 import com.cognite.client.CogniteClient;
 import com.cognite.client.Request;
 import com.cognite.client.dto.*;
+import com.cognite.client.util.Partition;
 import com.google.cloud.secretmanager.v1.AccessSecretVersionRequest;
 import com.google.cloud.secretmanager.v1.AccessSecretVersionResponse;
 import com.google.cloud.secretmanager.v1.SecretManagerServiceClient;
 import com.google.cloud.secretmanager.v1.SecretVersionName;
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
 import com.google.protobuf.StringValue;
 import com.google.protobuf.Struct;
 import com.google.protobuf.Value;
+import com.google.protobuf.util.Values;
+import org.apache.pdfbox.pdmodel.PDDocument;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.nio.file.Paths;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
@@ -62,16 +68,26 @@ public class InteractivePnId {
         LOG.info("Start building detect entities struct.");
         List<Struct> matchToEntities = new ArrayList<>();
         for (Asset asset : assetsResults) {
+            // The default text to search for
+            Value entityName = Values.of(asset.getName());
+
+            // check if the asset matches the condition for using spelling variations
+            if (asset.getName().length() > 10) {
+                List<Value> spellingVariations = List.of(entityName); // the default search text is one of the entries
+
+                // add the second spelling variation
+                spellingVariations.add(Values.of(asset.getName().substring(3)));
+
+                // combine the variations into the new "Value" representation
+                entityName = Values.of(spellingVariations);
+            }
+
+            // build the match entity
             Struct matchTo = Struct.newBuilder()
-                    .putFields("externalId", Value.newBuilder()
-                            .setStringValue(asset.getExternalId().getValue())
-                            .build())
-                    .putFields("name", Value.newBuilder()
-                            .setStringValue(asset.getName())
-                            .build())
-                    .putFields("resourceType", Value.newBuilder()
-                            .setStringValue("Asset")
-                            .build())
+                    .putFields("externalId", Values.of(asset.getExternalId().getValue()))
+                    .putFields("id", Values.of(asset.getId().getValue()))
+                    .putFields("name", entityName)
+                    .putFields("resourceType", Values.of("Asset"))
                     .build();
 
             matchToEntities.add(matchTo);
@@ -84,9 +100,38 @@ public class InteractivePnId {
         some restrictions on which file types it supports, so you should make sure to include
         only valid file types.
 
-        In this case we'll filter on PDFs. Since some sources
+        In this case we'll filter on PDFs. Since some sources don't report the PDF mime type correctly
+        we'll download the file binary and check that it can be read by a PDF parser.
          */
-        LOG.info("Start detect and convert.");
+        LOG.info("Start building the candidate files list.");
+        // we'll start with the candidate set of files based on metadata filters.
+        List<FileMetadata> fileCandidateList = new ArrayList<>();
+        getClient()
+                .files()
+                .list(Request.create()
+                        .withFilterParameter("dataSetIds", List.of(
+                                Map.of("externalId", fileSourceDataSetExternalId)
+                        ))
+                        .withFilterParameter("mimeType", "application/pdf")
+                        .withFilterMetadataParameter(fileSourceFilterMetadataKey, fileSourceFilterMetadataValue))
+                .forEachRemaining(fileMetadataBatch -> fileCandidateList.addAll(fileMetadataBatch));
+
+        // Then we check if the candidate files are single page PDFs.
+        // Since this involves working with file binaries, which are potentially large objects, we'll break everything
+        // down into smaller batches so that we don't run out of memory in case we have to evaluate many files.
+        List<FileMetadata> inputFiles = new ArrayList<>(); // the set of files satisfying all conditions--our final results
+        List<List<FileMetadata>> fileCandidateBatches = Partition.ofSize(fileCandidateList, 5);
+        for (List<FileMetadata> fileBatch : fileCandidateBatches) {
+            inputFiles.addAll(filterValidPdfs(fileBatch));
+        }
+
+        LOG.info("Finished building the candidate files list of {} files. Duration: {}",
+                inputFiles.size(),
+                Duration.between(startInstant, Instant.now()));
+
+
+        LOG.info("Start detect annotations and convert to SVG.");
+
         Item file = Item.newBuilder()
                 .setExternalId("D2:ID:0903d6c1801112e8:pdf")
                 .build();
@@ -95,40 +140,8 @@ public class InteractivePnId {
                 .pnid()
                 .detectAnnotationsPnID(List.<Item>of(file), entities, "name", true);
 
-        LOG.info("Finished Start detect and convert.. Duration: {}",
-                Duration.between(startInstant, Instant.now()));
 
-
-        // Iterate through all rows in batches and write to clean. This will effectively "stream" through
-        // the data so that we have constant memory usage no matter how large the data set is.
-        while (iterator.hasNext()) {
-            List<Event> events = iterator.next().stream()
-                    .map(row -> {
-                        // Collect all columns into the metadata bucket of the event
-                        Map<String, String> metadata = row.getColumns().getFieldsMap().entrySet().stream()
-                                .collect(Collectors.toMap((Map.Entry<String, Value> entry) -> entry.getKey(),
-                                        entry -> entry.getValue().getStringValue()));
-
-                        // Add basic lineage info
-                        metadata.put("dataSource",
-                                String.format("%s.%s.%s", row.getDbName(), row.getTableName(), row.getKey()));
-
-                        // Build the event object
-                        return Event.newBuilder()
-                                .setExternalId(StringValue.of(row.getTableName() + row.getKey()))
-                                .setDescription(StringValue.of(
-                                        row.getColumns().getFieldsOrThrow("my-mandatory-field").getStringValue()))
-                                .putAllMetadata(metadata)
-                                .setDataSetId(dataSets.get(0).getId())
-                                .build();
-                    })
-                    .collect(Collectors.toList());
-
-            client.events().upsert(events);
-            countRows += events.size();
-        }
-
-        LOG.info("Finished processing {} files. Duration {}",
+        LOG.info("Finished detect annotations and convert to SVG for {} files. Duration {}",
                 countFiles,
                 Duration.between(startInstant, Instant.now()));
     }
@@ -179,6 +192,84 @@ public class InteractivePnId {
         });
 
         return assetResults;
+    }
+
+    /*
+    Checks if a set of files are valid PDFs and returns the ones that pass the validation.
+     */
+    private static List<FileMetadata> filterValidPdfs(List<FileMetadata> inputFiles) throws Exception {
+        List<FileContainer> fileContainers = getClient()
+                .files()
+                .download(mapToItems(inputFiles), Paths.get("/temp"), true);
+
+        return fileContainers.stream()
+                .filter(fileContainer -> isValidPdf(fileContainer))
+                .map(fileContainer -> fileContainer.getFileMetadata())
+                .collect(Collectors.toList());
+    }
+
+    /*
+     * Checks the file based on the following conditions:
+     * - The binary is <50MiB
+     * - Must be a valid PDF binary.
+     * - Must be a single page binary.
+     */
+    private static boolean isValidPdf(FileContainer fileContainer) {
+        if (fileContainer.getFileBinary().getBinary().size() > (1024 * 1024 * 50)) {
+            LOG.warn("File binary larger than 50MiB. Name = [{}], id = [{}], externalId = [{}], binary size = [{}]MiB",
+                    fileContainer.getFileMetadata().getName().getValue(),
+                    fileContainer.getFileMetadata().getId().getValue(),
+                    fileContainer.getFileMetadata().getExternalId().getValue(),
+                    String.format("%.2f", fileContainer.getFileBinary().getBinary().size() / (1024d * 1024d)));
+
+            return false;
+        }
+
+        try (PDDocument pdDocument = PDDocument.load(fileContainer.getFileBinary().getBinary().toByteArray())) {
+            if (pdDocument.getNumberOfPages() > 1) {
+                LOG.warn("File contains more than 1 page. Name = [{}], no pages = [{}], id = [{}], externalId = [{}]",
+                        fileContainer.getFileMetadata().getName().getValue(),
+                        pdDocument.getNumberOfPages(),
+                        fileContainer.getFileMetadata().getId().getValue(),
+                        fileContainer.getFileMetadata().getExternalId().getValue());
+
+                return false;
+            } else {
+                return true;
+            }
+        } catch (IOException exception) {
+            LOG.warn("Error when parsing file: {}. File name = [{}], externalId = [{}], "
+                            + "binary length = [{}], binary as string: [{}]",
+                    exception.getMessage(),
+                    fileContainer.getFileMetadata().getName(),
+                    fileContainer.getFileMetadata().getExternalId().getValue(),
+                    fileContainer.getFileBinary().getBinary().size(),
+                    fileContainer.getFileBinary().getBinary().toStringUtf8().substring(0, 64));
+
+            return false;
+        }
+    }
+
+    /*
+    Maps a set of file (metadata) to items.
+     */
+    private static List<Item> mapToItems(List<FileMetadata> files) {
+        List<Item> resultsList = new ArrayList<>();
+        files.stream()
+                .map(fileMetadata -> {
+                    if (fileMetadata.hasId()) {
+                        return Item.newBuilder()
+                                .setId(fileMetadata.getId().getValue())
+                                .build();
+                    } else {
+                        return Item.newBuilder()
+                                .setExternalId(fileMetadata.getExternalId().getValue())
+                                .build();
+                    }
+                })
+                .forEach(item -> resultsList.add(item));
+
+        return resultsList;
     }
 
     /*
