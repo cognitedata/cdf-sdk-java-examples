@@ -73,7 +73,8 @@ public class InteractivePnId {
 
             // check if the asset matches the condition for using spelling variations
             if (asset.getName().length() > 10) {
-                List<Value> spellingVariations = List.of(entityName); // the default search text is one of the entries
+                List<Value> spellingVariations = new ArrayList<>();
+                spellingVariations.add(entityName); // the default search text is one of the entries
 
                 // add the second spelling variation
                 spellingVariations.add(Values.of(asset.getName().substring(3)));
@@ -129,17 +130,21 @@ public class InteractivePnId {
                 inputFiles.size(),
                 Duration.between(startInstant, Instant.now()));
 
+        /*
+        Run the files through the interactive P&ID service. In this case we run both detection (generate
+        annotations) and convert (generate SVGs).
 
+        It is good practice to iterate through the files in batches so that we don't saturate the api.
+         */
         LOG.info("Start detect annotations and convert to SVG.");
+        List<List<FileMetadata>> inputFileBatches = Partition.ofSize(inputFiles, 10);
+        for (List<FileMetadata> fileBatch : inputFileBatches) {
+            List<PnIDResponse> detectResults = getClient().experimental()
+                    .pnid()
+                    .detectAnnotationsPnID(mapToItems(fileBatch), matchToEntities, "name", true);
 
-        Item file = Item.newBuilder()
-                .setExternalId("D2:ID:0903d6c1801112e8:pdf")
-                .build();
 
-        List<PnIDResponse> detectResults = client.experimental()
-                .pnid()
-                .detectAnnotationsPnID(List.<Item>of(file), entities, "name", true);
-
+        }
 
         LOG.info("Finished detect annotations and convert to SVG for {} files. Duration {}",
                 countFiles,
