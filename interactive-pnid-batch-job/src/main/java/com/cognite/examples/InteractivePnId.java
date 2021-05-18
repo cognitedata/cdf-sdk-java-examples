@@ -10,6 +10,7 @@ import com.google.cloud.secretmanager.v1.SecretManagerServiceClient;
 import com.google.cloud.secretmanager.v1.SecretVersionName;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
+import com.google.protobuf.Int64Value;
 import com.google.protobuf.StringValue;
 import com.google.protobuf.Struct;
 import com.google.protobuf.Value;
@@ -46,7 +47,16 @@ public class InteractivePnId {
     //
     private final static String fileTechLocationMetadataKey = "document:abp_tech_location";
 
+    // Contextualization metadata
+    public final static String contextAgentKey = "contextAgent";
+    public final static String contextAlgorithmKey = "contextAlgorithm";
+    private final static String originDocExtIdKey =  "contextInteractivePnIdSourceDocExtId";
+    private final static String originDocUploadedTimeKey =  "contextInteractivePnIdSourceDocUploadedTime";
+    private final static String contextAgent = "Interactive P&ID pipeline";
+    private final static String contextAlgorithm = "Copy source file asset links";
+
     private static CogniteClient client = null;
+    private static Map<String, Long> dataSetExternalIdMap = null;
 
     public static void main(String[] args) throws Exception {
         Instant startInstant = Instant.now();
@@ -171,6 +181,26 @@ public class InteractivePnId {
     }
 
     /*
+    Read the data sets. This will be used as a lookup table to map between externalId and internal id
+    for data sets.
+     */
+    private static Map<String, Long> getDataSetExternalIdMap() throws Exception {
+        if (null == dataSetExternalIdMap) {
+            Map<String, Long> dataSetMap = new HashMap<>();
+            getClient()
+                    .datasets()
+                    .list(Request.create())
+                    .forEachRemaining(dataSetBatch ->
+                            dataSetBatch.stream()
+                                    .forEach(dataSet ->
+                                            dataSetMap.put(dataSet.getExternalId().getValue(), dataSet.getId().getValue()))
+                    );
+        }
+
+        return dataSetExternalIdMap;
+    }
+
+    /*
     Read the assets collection and minimize the asset objects.
      */
     private static List<Asset> readAssets() throws Exception {
@@ -275,6 +305,68 @@ public class InteractivePnId {
                 .forEach(item -> resultsList.add(item));
 
         return resultsList;
+    }
+
+    /*
+    Builds the file container (file metadata and binary) for an SVG (interactive P&ID) detection result.
+    The file binary is collected directly from the detection result and the file metadata is based on the
+    origin file's metadata.
+     */
+    private FileContainer buildSvgFileContainer(PnIDResponse pnIDResponse, FileMetadata originFileMetadata) throws Exception {
+        String originId = originFileMetadata.hasExternalId() ?
+                originFileMetadata.getExternalId().getValue() : String.valueOf(originFileMetadata.getId().getValue());
+        Long originUploadedTime = originFileMetadata.hasUploadedTime() ?
+                originFileMetadata.getUploadedTime().getValue() : -1L;
+        String nameNoSuffix =
+                originFileMetadata.getName().getValue().replaceFirst("\\.(\\w){1,5}$", "");
+        String source = "interactive-pnid-pipeline";
+        Long targetDataSetId = getDataSetExternalIdMap().getOrDefault(fileTargetDataSetExternalId, -1L);
+        if (targetDataSetId == -1) {
+            String message = "Cannot identify id for target dataset: "
+                    + fileTargetDataSetExternalId;
+            LOG.error(message);
+            throw new Exception(message);
+        }
+
+        // Build the common file metadata
+        ImmutableList skipMetadataKey = ImmutableList.of("content:dos_extension", "content:object_name",
+                "content:r_object_id","files:name");
+        Map<String, String> metadata = new HashMap<>(originFileMetadata.getMetadataCount());
+        originFileMetadata.getMetadataMap().entrySet().stream()
+                .filter(entry -> !skipMetadataKey.contains(entry.getKey()))
+                .forEach(entry -> metadata.put(entry.getKey(), entry.getValue()));
+
+        FileMetadata.Builder commonMetadataBuilder = FileMetadata.newBuilder()
+                .setDataSetId(Int64Value.of(targetDataSetId))
+                .addAllAssetIds(originFileMetadata.getAssetIdsList())
+                .putAllMetadata(metadata)
+                .putMetadata(originDocExtIdKey, originFileMetadata.getExternalId().getValue())
+                .putMetadata(originDocUploadedTimeKey, String.valueOf(originUploadedTime))
+                .putMetadata(contextAgentKey, contextAgent)
+                .putMetadata(contextAlgorithmKey, contextAlgorithm);
+
+        // Must check if the source document has these parameters. If not, they will incorrectly be set to "empty".
+        if (originFileMetadata.hasDirectory()) {
+            commonMetadataBuilder.setDirectory(originFileMetadata.getDirectory());
+        }
+        if (originFileMetadata.hasSource()) {
+            commonMetadataBuilder.setSource(originFileMetadata.getSource());
+        }
+        FileMetadata commonMetadata = commonMetadataBuilder.build();
+
+        // Build the file container
+        FileContainer.Builder svgContainerBuilder = FileContainer.newBuilder()
+                .setFileMetadata(FileMetadata.newBuilder(commonMetadata)
+                        .setExternalId(StringValue.of("convSvg:" + originId))
+                        .setName(StringValue.of(nameNoSuffix + ".svg"))
+                        .setMimeType(StringValue.of("image/svg+xml")));
+
+        if (pnIDResponse.hasSvgBinary()) {
+            svgContainerBuilder.setFileBinary(FileBinary.newBuilder()
+                    .setBinary(pnIDResponse.getSvgBinary().getValue()));
+        }
+
+        return svgContainerBuilder.build();
     }
 
     /*
