@@ -149,11 +149,28 @@ public class InteractivePnId {
         LOG.info("Start detect annotations and convert to SVG.");
         List<List<FileMetadata>> inputFileBatches = Partition.ofSize(inputFiles, 10);
         for (List<FileMetadata> fileBatch : inputFileBatches) {
+            // Detect annotations and convert to SVG
             List<PnIDResponse> detectResults = getClient().experimental()
                     .pnid()
                     .detectAnnotationsPnID(mapToItems(fileBatch), matchToEntities, "name", true);
 
+            // Map detect results and input file metadata to a common key and build the
+            // SVG file containers that we can write to CDF.
+            List<FileContainer> svgContainers = new ArrayList<>();
+            Map<Long, PnIDResponse> detectResponseMap = new HashMap<>();
+            Map<Long, FileMetadata> fileMetadataMap = new HashMap<>();
+            detectResults.stream()
+                    .forEach(result -> detectResponseMap.put(result.getFileId().getValue(), result));
+            fileBatch.stream()
+                    .forEach(fileMetadata -> fileMetadataMap.put(fileMetadata.getId().getValue(), fileMetadata));
 
+            for (Long key : detectResponseMap.keySet()) {
+                svgContainers.add(buildSvgFileContainer(detectResponseMap.get(key), fileMetadataMap.get(key)));
+            }
+
+            // Write the SVG files to CDF
+            getClient().files().upload(svgContainers);
+            countFiles += svgContainers.size();
         }
 
         LOG.info("Finished detect annotations and convert to SVG for {} files. Duration {}",
@@ -312,7 +329,7 @@ public class InteractivePnId {
     The file binary is collected directly from the detection result and the file metadata is based on the
     origin file's metadata.
      */
-    private FileContainer buildSvgFileContainer(PnIDResponse pnIDResponse, FileMetadata originFileMetadata) throws Exception {
+    private static FileContainer buildSvgFileContainer(PnIDResponse pnIDResponse, FileMetadata originFileMetadata) throws Exception {
         String originId = originFileMetadata.hasExternalId() ?
                 originFileMetadata.getExternalId().getValue() : String.valueOf(originFileMetadata.getId().getValue());
         Long originUploadedTime = originFileMetadata.hasUploadedTime() ?
