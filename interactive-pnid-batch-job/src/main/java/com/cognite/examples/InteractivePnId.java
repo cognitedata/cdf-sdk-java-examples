@@ -9,7 +9,6 @@ import com.google.cloud.secretmanager.v1.AccessSecretVersionResponse;
 import com.google.cloud.secretmanager.v1.SecretManagerServiceClient;
 import com.google.cloud.secretmanager.v1.SecretVersionName;
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
 import com.google.protobuf.Int64Value;
 import com.google.protobuf.StringValue;
 import com.google.protobuf.Struct;
@@ -29,7 +28,6 @@ import java.util.stream.Collectors;
 public class InteractivePnId {
     private static Logger LOG = LoggerFactory.getLogger(InteractivePnId.class);
     private final static String baseURL = "https://api.cognitedata.com";
-    private final static String fileNameSuffixRegEx = "\\.[a-zA-Z]{1,4}$";
     private static String appIdentifier = "my-interactive-pnid-pipeline";
 
     /* Pipeline config parameters */
@@ -53,7 +51,7 @@ public class InteractivePnId {
     private final static String originDocExtIdKey =  "contextInteractivePnIdSourceDocExtId";
     private final static String originDocUploadedTimeKey =  "contextInteractivePnIdSourceDocUploadedTime";
     private final static String contextAgent = "Interactive P&ID pipeline";
-    private final static String contextAlgorithm = "Copy source file asset links";
+    private final static String contextAlgorithm = "Copy from source file";
 
     private static CogniteClient client = null;
     private static Map<String, Long> dataSetExternalIdMap = null;
@@ -74,6 +72,10 @@ public class InteractivePnId {
         P&ID service and guides how entities are detected in the P&ID.
         For example, if you want to take spelling variations into account, then this is
         the place you would add that configuration.
+
+        For example:
+        Document text: "PT-023745-A" OR "023745"
+        Asset (ext) id: "ULA_1A-PT-023745-A"
          */
         LOG.info("Start building detect entities struct.");
         List<Struct> matchToEntities = new ArrayList<>();
