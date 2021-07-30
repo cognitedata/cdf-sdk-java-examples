@@ -9,8 +9,6 @@ import com.google.cloud.secretmanager.v1.AccessSecretVersionResponse;
 import com.google.cloud.secretmanager.v1.SecretManagerServiceClient;
 import com.google.cloud.secretmanager.v1.SecretVersionName;
 import com.google.common.collect.ImmutableList;
-import com.google.protobuf.Int64Value;
-import com.google.protobuf.StringValue;
 import com.google.protobuf.Struct;
 import com.google.protobuf.Value;
 import com.google.protobuf.util.Values;
@@ -97,8 +95,8 @@ public class InteractivePnId {
 
             // build the match entity
             Struct matchTo = Struct.newBuilder()
-                    .putFields("externalId", Values.of(asset.getExternalId().getValue()))
-                    .putFields("id", Values.of(asset.getId().getValue()))
+                    .putFields("externalId", Values.of(asset.getExternalId()))
+                    .putFields("id", Values.of(asset.getId()))
                     .putFields("name", entityName)
                     .putFields("resourceType", Values.of("Asset"))
                     .build();
@@ -162,9 +160,9 @@ public class InteractivePnId {
             Map<Long, PnIDResponse> detectResponseMap = new HashMap<>();
             Map<Long, FileMetadata> fileMetadataMap = new HashMap<>();
             detectResults.stream()
-                    .forEach(result -> detectResponseMap.put(result.getFileId().getValue(), result));
+                    .forEach(result -> detectResponseMap.put(result.getFileId(), result));
             fileBatch.stream()
-                    .forEach(fileMetadata -> fileMetadataMap.put(fileMetadata.getId().getValue(), fileMetadata));
+                    .forEach(fileMetadata -> fileMetadataMap.put(fileMetadata.getId(), fileMetadata));
 
             for (Long key : detectResponseMap.keySet()) {
                 svgContainers.add(buildSvgFileContainer(detectResponseMap.get(key), fileMetadataMap.get(key)));
@@ -212,7 +210,7 @@ public class InteractivePnId {
                     .forEachRemaining(dataSetBatch ->
                             dataSetBatch.stream()
                                     .forEach(dataSet ->
-                                            dataSetMap.put(dataSet.getExternalId().getValue(), dataSet.getId().getValue()))
+                                            dataSetMap.put(dataSet.getExternalId(), dataSet.getId()))
                     );
         }
 
@@ -271,9 +269,9 @@ public class InteractivePnId {
     private static boolean isValidPdf(FileContainer fileContainer) {
         if (fileContainer.getFileBinary().getBinary().size() > (1024 * 1024 * 50)) {
             LOG.warn("File binary larger than 50MiB. Name = [{}], id = [{}], externalId = [{}], binary size = [{}]MiB",
-                    fileContainer.getFileMetadata().getName().getValue(),
-                    fileContainer.getFileMetadata().getId().getValue(),
-                    fileContainer.getFileMetadata().getExternalId().getValue(),
+                    fileContainer.getFileMetadata().getName(),
+                    fileContainer.getFileMetadata().getId(),
+                    fileContainer.getFileMetadata().getExternalId(),
                     String.format("%.2f", fileContainer.getFileBinary().getBinary().size() / (1024d * 1024d)));
 
             return false;
@@ -282,10 +280,10 @@ public class InteractivePnId {
         try (PDDocument pdDocument = PDDocument.load(fileContainer.getFileBinary().getBinary().toByteArray())) {
             if (pdDocument.getNumberOfPages() > 1) {
                 LOG.warn("File contains more than 1 page. Name = [{}], no pages = [{}], id = [{}], externalId = [{}]",
-                        fileContainer.getFileMetadata().getName().getValue(),
+                        fileContainer.getFileMetadata().getName(),
                         pdDocument.getNumberOfPages(),
-                        fileContainer.getFileMetadata().getId().getValue(),
-                        fileContainer.getFileMetadata().getExternalId().getValue());
+                        fileContainer.getFileMetadata().getId(),
+                        fileContainer.getFileMetadata().getExternalId());
 
                 return false;
             } else {
@@ -296,7 +294,7 @@ public class InteractivePnId {
                             + "binary length = [{}], binary as string: [{}]",
                     exception.getMessage(),
                     fileContainer.getFileMetadata().getName(),
-                    fileContainer.getFileMetadata().getExternalId().getValue(),
+                    fileContainer.getFileMetadata().getExternalId(),
                     fileContainer.getFileBinary().getBinary().size(),
                     fileContainer.getFileBinary().getBinary().toStringUtf8().substring(0, 64));
 
@@ -313,11 +311,11 @@ public class InteractivePnId {
                 .map(fileMetadata -> {
                     if (fileMetadata.hasId()) {
                         return Item.newBuilder()
-                                .setId(fileMetadata.getId().getValue())
+                                .setId(fileMetadata.getId())
                                 .build();
                     } else {
                         return Item.newBuilder()
-                                .setExternalId(fileMetadata.getExternalId().getValue())
+                                .setExternalId(fileMetadata.getExternalId())
                                 .build();
                     }
                 })
@@ -333,11 +331,11 @@ public class InteractivePnId {
      */
     private static FileContainer buildSvgFileContainer(PnIDResponse pnIDResponse, FileMetadata originFileMetadata) throws Exception {
         String originId = originFileMetadata.hasExternalId() ?
-                originFileMetadata.getExternalId().getValue() : String.valueOf(originFileMetadata.getId().getValue());
+                originFileMetadata.getExternalId() : String.valueOf(originFileMetadata.getId());
         Long originUploadedTime = originFileMetadata.hasUploadedTime() ?
-                originFileMetadata.getUploadedTime().getValue() : -1L;
+                originFileMetadata.getUploadedTime() : -1L;
         String nameNoSuffix =
-                originFileMetadata.getName().getValue().replaceFirst("\\.(\\w){1,5}$", "");
+                originFileMetadata.getName().replaceFirst("\\.(\\w){1,5}$", "");
         String source = "interactive-pnid-pipeline";
         Long targetDataSetId = getDataSetExternalIdMap().getOrDefault(fileTargetDataSetExternalId, -1L);
         if (targetDataSetId == -1) {
@@ -356,10 +354,10 @@ public class InteractivePnId {
                 .forEach(entry -> metadata.put(entry.getKey(), entry.getValue()));
 
         FileMetadata.Builder commonMetadataBuilder = FileMetadata.newBuilder()
-                .setDataSetId(Int64Value.of(targetDataSetId))
+                .setDataSetId(targetDataSetId)
                 .addAllAssetIds(originFileMetadata.getAssetIdsList())
                 .putAllMetadata(metadata)
-                .putMetadata(originDocExtIdKey, originFileMetadata.getExternalId().getValue())
+                .putMetadata(originDocExtIdKey, originFileMetadata.getExternalId())
                 .putMetadata(originDocUploadedTimeKey, String.valueOf(originUploadedTime))
                 .putMetadata(contextAgentKey, contextAgent)
                 .putMetadata(contextAlgorithmKey, contextAlgorithm);
@@ -376,13 +374,13 @@ public class InteractivePnId {
         // Build the file container
         FileContainer.Builder svgContainerBuilder = FileContainer.newBuilder()
                 .setFileMetadata(FileMetadata.newBuilder(commonMetadata)
-                        .setExternalId(StringValue.of("convSvg:" + originId))
-                        .setName(StringValue.of(nameNoSuffix + ".svg"))
-                        .setMimeType(StringValue.of("image/svg+xml")));
+                        .setExternalId("convSvg:" + originId)
+                        .setName(nameNoSuffix + ".svg")
+                        .setMimeType("image/svg+xml"));
 
         if (pnIDResponse.hasSvgBinary()) {
             svgContainerBuilder.setFileBinary(FileBinary.newBuilder()
-                    .setBinary(pnIDResponse.getSvgBinary().getValue()));
+                    .setBinary(pnIDResponse.getSvgBinary()));
         }
 
         return svgContainerBuilder.build();
