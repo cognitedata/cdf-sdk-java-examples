@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: raw-to-clean-batch-job
+  name: interactive-pnid-batch-job
 spec:
   template:
     spec:

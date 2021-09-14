@@ -16,5 +16,5 @@ The main steps of the pipeline:
 1. Read and process the CDF `assets` to use as basis for text matching.
 2. Identify the candidate P&ID `files` to process.
 3. Run the P&ID `files` through the contextualization service.
-4. Upload the resulting SVG file to CDF.
+4. Upload the resulting SVG/PNG files to CDF.
 

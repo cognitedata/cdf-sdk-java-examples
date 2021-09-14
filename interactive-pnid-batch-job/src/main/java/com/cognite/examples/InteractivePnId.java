@@ -107,7 +107,7 @@ public class InteractivePnId {
                 Duration.between(startInstant, Instant.now()));
 
         /*
-        Build the list of files to run through the interactive P&ID process. The P&ID service has
+        Build the list of files to run through the interactive engineering diagram process. The diagram service has
         some restrictions on which file types it supports, so you should make sure to include
         only valid file types.
 
@@ -146,18 +146,18 @@ public class InteractivePnId {
 
         It is good practice to iterate through the files in batches so that we don't saturate the api.
          */
-        LOG.info("Start detect annotations and convert to SVG.");
+        LOG.info("Start detect annotations and convert to SVG/PNG.");
         List<List<FileMetadata>> inputFileBatches = Partition.ofSize(inputFiles, 10);
         for (List<FileMetadata> fileBatch : inputFileBatches) {
             // Detect annotations and convert to SVG
-            List<PnIDResponse> detectResults = getClient().experimental()
-                    .pnid()
-                    .detectAnnotationsPnID(mapToItems(fileBatch), matchToEntities, "name", true);
+            List<DiagramResponse> detectResults = getClient().experimental()
+                    .engineeringDiagrams()
+                    .detectAnnotations(mapToItems(fileBatch), matchToEntities, "name", true);
 
             // Map detect results and input file metadata to a common key and build the
-            // SVG file containers that we can write to CDF.
+            // SVG/PNG file containers that we can write to CDF.
             List<FileContainer> svgContainers = new ArrayList<>();
-            Map<Long, PnIDResponse> detectResponseMap = new HashMap<>();
+            Map<Long, DiagramResponse> detectResponseMap = new HashMap<>();
             Map<Long, FileMetadata> fileMetadataMap = new HashMap<>();
             detectResults.stream()
                     .forEach(result -> detectResponseMap.put(result.getFileId(), result));
@@ -165,7 +165,7 @@ public class InteractivePnId {
                     .forEach(fileMetadata -> fileMetadataMap.put(fileMetadata.getId(), fileMetadata));
 
             for (Long key : detectResponseMap.keySet()) {
-                svgContainers.add(buildSvgFileContainer(detectResponseMap.get(key), fileMetadataMap.get(key)));
+                svgContainers.addAll(buildSvgFileContainer(detectResponseMap.get(key), fileMetadataMap.get(key)));
             }
 
             // Write the SVG files to CDF
@@ -180,6 +180,12 @@ public class InteractivePnId {
 
     /*
     Instantiate the cognite client based on an api key hosted in GCP Secret Manager (key vault).
+
+    The client could also be instantiated based on OIDC instead. In that case, you need a client secret and the
+    URL to the Azure Directory service to use for authentication.
+
+    You could also use other key vaults than GCP Secret manager. Typical examples include Kubernetes secrets
+    (provisioned via environment variables or files), AWS Key Management Services and Azure Key Vault.
      */
     private static CogniteClient getClient() throws Exception {
         if (null == client) {
@@ -263,8 +269,8 @@ public class InteractivePnId {
     /*
      * Checks the file based on the following conditions:
      * - The binary is <50MiB
+     * - Number of pages is <= 50
      * - Must be a valid PDF binary.
-     * - Must be a single page binary.
      */
     private static boolean isValidPdf(FileContainer fileContainer) {
         if (fileContainer.getFileBinary().getBinary().size() > (1024 * 1024 * 50)) {
@@ -278,8 +284,8 @@ public class InteractivePnId {
         }
 
         try (PDDocument pdDocument = PDDocument.load(fileContainer.getFileBinary().getBinary().toByteArray())) {
-            if (pdDocument.getNumberOfPages() > 1) {
-                LOG.warn("File contains more than 1 page. Name = [{}], no pages = [{}], id = [{}], externalId = [{}]",
+            if (pdDocument.getNumberOfPages() > 50) {
+                LOG.warn("File contains more than 50 pages. Name = [{}], no pages = [{}], id = [{}], externalId = [{}]",
                         fileContainer.getFileMetadata().getName(),
                         pdDocument.getNumberOfPages(),
                         fileContainer.getFileMetadata().getId(),
@@ -329,15 +335,18 @@ public class InteractivePnId {
     The file binary is collected directly from the detection result and the file metadata is based on the
     origin file's metadata.
      */
-    private static FileContainer buildSvgFileContainer(PnIDResponse pnIDResponse, FileMetadata originFileMetadata) throws Exception {
-        String originId = originFileMetadata.hasExternalId() ?
+    private static List<FileContainer> buildSvgFileContainer(DiagramResponse diagramResponse,
+                                                             FileMetadata originFileMetadata) throws Exception {
+        List<FileContainer> fileContainerList = new ArrayList<>();
+        final String originId = originFileMetadata.hasExternalId() ?
                 originFileMetadata.getExternalId() : String.valueOf(originFileMetadata.getId());
-        Long originUploadedTime = originFileMetadata.hasUploadedTime() ?
+        final Long originUploadedTime = originFileMetadata.hasUploadedTime() ?
                 originFileMetadata.getUploadedTime() : -1L;
-        String nameNoSuffix =
+        final String nameNoSuffix =
                 originFileMetadata.getName().replaceFirst("\\.(\\w){1,5}$", "");
-        String source = "interactive-pnid-pipeline";
-        Long targetDataSetId = getDataSetExternalIdMap().getOrDefault(fileTargetDataSetExternalId, -1L);
+        final String source = "interactive-pnid-pipeline";
+        final Long targetDataSetId = getDataSetExternalIdMap().getOrDefault(fileTargetDataSetExternalId, -1L);
+
         if (targetDataSetId == -1) {
             String message = "Cannot identify id for target dataset: "
                     + fileTargetDataSetExternalId;
@@ -368,26 +377,44 @@ public class InteractivePnId {
         }
         if (originFileMetadata.hasSource()) {
             commonMetadataBuilder.setSource(originFileMetadata.getSource());
+        } else {
+            commonMetadataBuilder.setSource(source);
         }
         FileMetadata commonMetadata = commonMetadataBuilder.build();
 
-        // Build the file container
-        FileContainer.Builder svgContainerBuilder = FileContainer.newBuilder()
-                .setFileMetadata(FileMetadata.newBuilder(commonMetadata)
-                        .setExternalId("convSvg:" + originId)
-                        .setName(nameNoSuffix + ".svg")
-                        .setMimeType("image/svg+xml"));
+        // Iterate through the individual pages of the convert results
+        for (DiagramResponse.ConvertResult convertResult : diagramResponse.getConvertResultsList()) {
+            // Build the file containers
+            if (convertResult.hasSvgBinary()) {
+                FileContainer.Builder svgContainerBuilder = FileContainer.newBuilder()
+                        .setFileMetadata(FileMetadata.newBuilder(commonMetadata)
+                                .setExternalId("convSvg:" + originId + ":page" + convertResult.getPage())
+                                .setName(nameNoSuffix + "-page" + convertResult.getPage() + ".svg")
+                                .setMimeType("image/svg+xml"))
+                        .setFileBinary(FileBinary.newBuilder()
+                                .setBinary(convertResult.getSvgBinary()));
 
-        if (pnIDResponse.hasSvgBinary()) {
-            svgContainerBuilder.setFileBinary(FileBinary.newBuilder()
-                    .setBinary(pnIDResponse.getSvgBinary()));
+                fileContainerList.add(svgContainerBuilder.build());
+            }
+            if (convertResult.hasPngBinary()) {
+                FileContainer.Builder pngContainerBuilder = FileContainer.newBuilder()
+                        .setFileMetadata(FileMetadata.newBuilder(commonMetadata)
+                                .setExternalId("convPng:" + originId + ":page" + convertResult.getPage())
+                                .setName(nameNoSuffix + "-page" + convertResult.getPage() + ".png")
+                                .setMimeType("image/png"))
+                        .setFileBinary(FileBinary.newBuilder()
+                                .setBinary(convertResult.getPngBinary()));
+
+                fileContainerList.add(pngContainerBuilder.build());
+            }
         }
 
-        return svgContainerBuilder.build();
+        return fileContainerList;
     }
 
     /*
     Read secrets from GCP Secret Manager.
+
     If we are using workload identity on GKE, we have to take into account that the identity metadata
     service for the pod may take a few seconds to initialize. Therefore the implicit call to get
     identity may fail if it happens at the very start of the pod. The workaround is to perform a
