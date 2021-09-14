@@ -1,21 +1,23 @@
 package com.cognite.examples;
 
 import com.cognite.client.CogniteClient;
-import com.cognite.client.dto.DataSet;
-import com.cognite.client.dto.Event;
-import com.cognite.client.dto.Item;
-import com.cognite.client.dto.RawRow;
+import com.cognite.client.Request;
+import com.cognite.client.dto.*;
+import com.cognite.client.util.Partition;
 import com.google.cloud.secretmanager.v1.AccessSecretVersionRequest;
 import com.google.cloud.secretmanager.v1.AccessSecretVersionResponse;
 import com.google.cloud.secretmanager.v1.SecretManagerServiceClient;
 import com.google.cloud.secretmanager.v1.SecretVersionName;
 import com.google.common.collect.ImmutableList;
-import com.google.protobuf.StringValue;
+import com.google.protobuf.Struct;
 import com.google.protobuf.Value;
+import com.google.protobuf.util.Values;
+import org.apache.pdfbox.pdmodel.PDDocument;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.nio.file.Paths;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
@@ -24,93 +26,395 @@ import java.util.stream.Collectors;
 public class InteractivePnId {
     private static Logger LOG = LoggerFactory.getLogger(InteractivePnId.class);
     private final static String baseURL = "https://api.cognitedata.com";
+    private static String appIdentifier = "my-interactive-pnid-pipeline";
+
+    /* Pipeline config parameters */
+    // filters to select the source P&IDs
+    private final static String fileSourceDataSetExternalId = "dataset:d2-lci-files";
+    private final static String fileSourceFilterMetadataKey = "DOCUMENT TYPE CODE";
+    private final static String fileSourceFilterMetadataValue = "XB";
+
+    // filters to select the assets to use as lookup values for the P&ID service
+    private final static String assetDataSetExternalId = "dataset:aveva-net-assets";
+
+    // the target data set for the interactive P&IDs
+    private final static String fileTargetDataSetExternalId = "dataset:d2-interactive-pnids";
+
+    //
+    private final static String fileTechLocationMetadataKey = "document:abp_tech_location";
+
+    // Contextualization metadata
+    public final static String contextAgentKey = "contextAgent";
+    public final static String contextAlgorithmKey = "contextAlgorithm";
+    private final static String originDocExtIdKey =  "contextInteractivePnIdSourceDocExtId";
+    private final static String originDocUploadedTimeKey =  "contextInteractivePnIdSourceDocUploadedTime";
+    private final static String contextAgent = "Interactive P&ID pipeline";
+    private final static String contextAlgorithm = "Copy from source file";
+
+    private static CogniteClient client = null;
+    private static Map<String, Long> dataSetExternalIdMap = null;
 
     public static void main(String[] args) throws Exception {
         Instant startInstant = Instant.now();
-        int countRows = 0;
+        int countFiles = 0;
 
-        // Get the source table via env variables
-        String dbName = System.getenv("RAW_DB").split("\\.")[0];
-        String dbTable = System.getenv("RAW_DB").split("\\.")[1];
+        // Read the assets which we'll use as a basis for looking up entities in the P&ID
+        LOG.info("Start downloading assets.");
+        List<Asset> assetsResults = readAssets();
+        LOG.info("Finished downloading {} assets. Duration: {}",
+                assetsResults.size(),
+                Duration.between(startInstant, Instant.now()));
 
-        CogniteClient client = getClient();
+        /*
+        We need to construct the actual lookup entities. This is input to the
+        P&ID service and guides how entities are detected in the P&ID.
+        For example, if you want to take spelling variations into account, then this is
+        the place you would add that configuration.
 
-        // Get the data set id
-        String dataSetExternalId = System.getenv("DATASET_EXT_ID");
-        if (null == dataSetExternalId) {
-            // The data set external id is not set.
-            String message = "DATASET_EXT_ID is not configured.";
-            LOG.error(message);
-            throw new Exception(message);
+        For example:
+        Document text: "PT-023745-A" OR "023745"
+        Asset (ext) id: "ULA_1A-PT-023745-A"
+         */
+        LOG.info("Start building detect entities struct.");
+        List<Struct> matchToEntities = new ArrayList<>();
+        for (Asset asset : assetsResults) {
+            // The default text to search for
+            Value entityName = Values.of(asset.getName());
+
+            // check if the asset matches the condition for using spelling variations
+            if (asset.getName().length() > 10) {
+                List<Value> spellingVariations = new ArrayList<>();
+                spellingVariations.add(entityName); // the default search text is one of the entries
+
+                // add the second spelling variation
+                spellingVariations.add(Values.of(asset.getName().substring(3)));
+
+                // combine the variations into the new "Value" representation
+                entityName = Values.of(spellingVariations);
+            }
+
+            // build the match entity
+            Struct matchTo = Struct.newBuilder()
+                    .putFields("externalId", Values.of(asset.getExternalId()))
+                    .putFields("id", Values.of(asset.getId()))
+                    .putFields("name", entityName)
+                    .putFields("resourceType", Values.of("Asset"))
+                    .build();
+
+            matchToEntities.add(matchTo);
         }
-        LOG.info("Looking up the data set external id: {}.",
-                dataSetExternalId);
-        List<DataSet> dataSets = client.datasets()
-                .retrieve(ImmutableList.of(Item.newBuilder().setExternalId(dataSetExternalId).build()));
+        LOG.info("Finished building detect entities struct. Duration: {}",
+                Duration.between(startInstant, Instant.now()));
 
-        if (dataSets.size() != 1) {
-            // The provided data set external id cannot be found.
-            String message = String.format("The configured data set external id does not exist: %s", dataSetExternalId);
-            LOG.error(message);
-            throw new Exception(message);
+        /*
+        Build the list of files to run through the interactive engineering diagram process. The diagram service has
+        some restrictions on which file types it supports, so you should make sure to include
+        only valid file types.
+
+        In this case we'll filter on PDFs. Since some sources don't report the PDF mime type correctly
+        we'll download the file binary and check that it can be read by a PDF parser.
+         */
+        LOG.info("Start building the candidate files list.");
+        // we'll start with the candidate set of files based on metadata filters.
+        List<FileMetadata> fileCandidateList = new ArrayList<>();
+        getClient()
+                .files()
+                .list(Request.create()
+                        .withFilterParameter("dataSetIds", List.of(
+                                Map.of("externalId", fileSourceDataSetExternalId)
+                        ))
+                        .withFilterParameter("mimeType", "application/pdf")
+                        .withFilterMetadataParameter(fileSourceFilterMetadataKey, fileSourceFilterMetadataValue))
+                .forEachRemaining(fileMetadataBatch -> fileCandidateList.addAll(fileMetadataBatch));
+
+        // Then we check if the candidate files are single page PDFs.
+        // Since this involves working with file binaries, which are potentially large objects, we'll break everything
+        // down into smaller batches so that we don't run out of memory in case we have to evaluate many files.
+        List<FileMetadata> inputFiles = new ArrayList<>(); // the set of files satisfying all conditions--our final results
+        List<List<FileMetadata>> fileCandidateBatches = Partition.ofSize(fileCandidateList, 5);
+        for (List<FileMetadata> fileBatch : fileCandidateBatches) {
+            inputFiles.addAll(filterValidPdfs(fileBatch));
         }
 
-        // Set up the reader for the raw table
-        LOG.info("Starting to read the raw table {}.{}.",
-                dbName,
-                dbTable);
-        Iterator<List<RawRow>> iterator = client.raw().rows().list(dbName, dbTable);
+        LOG.info("Finished building the candidate files list of {} files. Duration: {}",
+                inputFiles.size(),
+                Duration.between(startInstant, Instant.now()));
 
-        // Iterate through all rows in batches and write to clean. This will effectively "stream" through
-        // the data so that we have constant memory usage no matter how large the data set is.
-        while (iterator.hasNext()) {
-            List<Event> events = iterator.next().stream()
-                    .map(row -> {
-                        // Collect all columns into the metadata bucket of the event
-                        Map<String, String> metadata = row.getColumns().getFieldsMap().entrySet().stream()
-                                .collect(Collectors.toMap((Map.Entry<String, Value> entry) -> entry.getKey(),
-                                        entry -> entry.getValue().getStringValue()));
+        /*
+        Run the files through the interactive P&ID service. In this case we run both detection (generate
+        annotations) and convert (generate SVGs).
 
-                        // Add basic lineage info
-                        metadata.put("dataSource",
-                                String.format("%s.%s.%s", row.getDbName(), row.getTableName(), row.getKey()));
+        It is good practice to iterate through the files in batches so that we don't saturate the api.
+         */
+        LOG.info("Start detect annotations and convert to SVG/PNG.");
+        List<List<FileMetadata>> inputFileBatches = Partition.ofSize(inputFiles, 10);
+        for (List<FileMetadata> fileBatch : inputFileBatches) {
+            // Detect annotations and convert to SVG
+            List<DiagramResponse> detectResults = getClient().experimental()
+                    .engineeringDiagrams()
+                    .detectAnnotations(mapToItems(fileBatch), matchToEntities, "name", true);
 
-                        // Build the event object
-                        return Event.newBuilder()
-                                .setExternalId(StringValue.of(row.getTableName() + row.getKey()))
-                                .setDescription(StringValue.of(
-                                        row.getColumns().getFieldsOrThrow("my-mandatory-field").getStringValue()))
-                                .putAllMetadata(metadata)
-                                .setDataSetId(dataSets.get(0).getId())
-                                .build();
-                    })
-                    .collect(Collectors.toList());
+            // Map detect results and input file metadata to a common key and build the
+            // SVG/PNG file containers that we can write to CDF.
+            List<FileContainer> svgContainers = new ArrayList<>();
+            Map<Long, DiagramResponse> detectResponseMap = new HashMap<>();
+            Map<Long, FileMetadata> fileMetadataMap = new HashMap<>();
+            detectResults.stream()
+                    .forEach(result -> detectResponseMap.put(result.getFileId(), result));
+            fileBatch.stream()
+                    .forEach(fileMetadata -> fileMetadataMap.put(fileMetadata.getId(), fileMetadata));
 
-            client.events().upsert(events);
-            countRows += events.size();
+            for (Long key : detectResponseMap.keySet()) {
+                svgContainers.addAll(buildSvgFileContainer(detectResponseMap.get(key), fileMetadataMap.get(key)));
+            }
+
+            // Write the SVG files to CDF
+            getClient().files().upload(svgContainers);
+            countFiles += svgContainers.size();
         }
 
-        LOG.info("Finished processing {} rows from raw. Duration {}",
-                countRows,
+        LOG.info("Finished detect annotations and convert to SVG for {} files. Duration {}",
+                countFiles,
                 Duration.between(startInstant, Instant.now()));
     }
 
     /*
     Instantiate the cognite client based on an api key hosted in GCP Secret Manager (key vault).
+
+    The client could also be instantiated based on OIDC instead. In that case, you need a client secret and the
+    URL to the Azure Directory service to use for authentication.
+
+    You could also use other key vaults than GCP Secret manager. Typical examples include Kubernetes secrets
+    (provisioned via environment variables or files), AWS Key Management Services and Azure Key Vault.
      */
     private static CogniteClient getClient() throws Exception {
-        // Instantiate the client
-        LOG.info("Start instantiate the Cognite Client.");
+        if (null == client) {
+            // Instantiate the client
+            LOG.info("Start instantiate the Cognite Client.");
 
-        LOG.info("API key is hosted in Secret Manager.");
-        String projectId = System.getenv("CDF_API_KEY_SECRET_MANAGER").split("\\.")[0];
-        String secretId = System.getenv("CDF_API_KEY_SECRET_MANAGER").split("\\.")[1];
-        return CogniteClient.ofKey(getGcpSecret(projectId, secretId, "latest"))
-                .withBaseUrl(baseURL);
+            LOG.info("API key is hosted in Secret Manager.");
+            String projectId = System.getenv("CDF_API_KEY_SECRET_MANAGER").split("\\.")[0];
+            String secretId = System.getenv("CDF_API_KEY_SECRET_MANAGER").split("\\.")[1];
+
+            client = CogniteClient.ofKey(getGcpSecret(projectId, secretId, "latest"))
+                    .withBaseUrl(baseURL);
+        }
+
+        return client;
+    }
+
+    /*
+    Read the data sets. This will be used as a lookup table to map between externalId and internal id
+    for data sets.
+     */
+    private static Map<String, Long> getDataSetExternalIdMap() throws Exception {
+        if (null == dataSetExternalIdMap) {
+            Map<String, Long> dataSetMap = new HashMap<>();
+            getClient()
+                    .datasets()
+                    .list(Request.create())
+                    .forEachRemaining(dataSetBatch ->
+                            dataSetBatch.stream()
+                                    .forEach(dataSet ->
+                                            dataSetMap.put(dataSet.getExternalId(), dataSet.getId()))
+                    );
+        }
+
+        return dataSetExternalIdMap;
+    }
+
+    /*
+    Read the assets collection and minimize the asset objects.
+     */
+    private static List<Asset> readAssets() throws Exception {
+        List<Asset> assetResults = new ArrayList<>();
+
+        // Read assets based on a list filter. The SDK client gives you an iterator back
+        // that lets you "stream" batches of results.
+        Iterator<List<Asset>> resultsIterator = getClient().assets().list(Request.create()
+                .withFilterParameter("dataSetIds", List.of(
+                        Map.of("externalId", assetDataSetExternalId))
+                )
+                .withFilterMetadataParameter("FACILITY", "ULA")
+        );
+
+        // Read the asset results, one batch at a time.
+        resultsIterator.forEachRemaining(assets -> {
+            for (Asset asset : assets) {
+                // we break out the results batch and process each individual result.
+                // In this case we want minimize the size of the asset collection
+                // by removing the metadata bucket (we don't need all that metadata for
+                // our processing.
+                assetResults.add(asset.toBuilder().clearMetadata().build());
+            }
+        });
+
+        return assetResults;
+    }
+
+    /*
+    Checks if a set of files are valid PDFs and returns the ones that pass the validation.
+     */
+    private static List<FileMetadata> filterValidPdfs(List<FileMetadata> inputFiles) throws Exception {
+        List<FileContainer> fileContainers = getClient()
+                .files()
+                .download(mapToItems(inputFiles), Paths.get("/temp"), true);
+
+        return fileContainers.stream()
+                .filter(fileContainer -> isValidPdf(fileContainer))
+                .map(fileContainer -> fileContainer.getFileMetadata())
+                .collect(Collectors.toList());
+    }
+
+    /*
+     * Checks the file based on the following conditions:
+     * - The binary is <50MiB
+     * - Number of pages is <= 50
+     * - Must be a valid PDF binary.
+     */
+    private static boolean isValidPdf(FileContainer fileContainer) {
+        if (fileContainer.getFileBinary().getBinary().size() > (1024 * 1024 * 50)) {
+            LOG.warn("File binary larger than 50MiB. Name = [{}], id = [{}], externalId = [{}], binary size = [{}]MiB",
+                    fileContainer.getFileMetadata().getName(),
+                    fileContainer.getFileMetadata().getId(),
+                    fileContainer.getFileMetadata().getExternalId(),
+                    String.format("%.2f", fileContainer.getFileBinary().getBinary().size() / (1024d * 1024d)));
+
+            return false;
+        }
+
+        try (PDDocument pdDocument = PDDocument.load(fileContainer.getFileBinary().getBinary().toByteArray())) {
+            if (pdDocument.getNumberOfPages() > 50) {
+                LOG.warn("File contains more than 50 pages. Name = [{}], no pages = [{}], id = [{}], externalId = [{}]",
+                        fileContainer.getFileMetadata().getName(),
+                        pdDocument.getNumberOfPages(),
+                        fileContainer.getFileMetadata().getId(),
+                        fileContainer.getFileMetadata().getExternalId());
+
+                return false;
+            } else {
+                return true;
+            }
+        } catch (IOException exception) {
+            LOG.warn("Error when parsing file: {}. File name = [{}], externalId = [{}], "
+                            + "binary length = [{}], binary as string: [{}]",
+                    exception.getMessage(),
+                    fileContainer.getFileMetadata().getName(),
+                    fileContainer.getFileMetadata().getExternalId(),
+                    fileContainer.getFileBinary().getBinary().size(),
+                    fileContainer.getFileBinary().getBinary().toStringUtf8().substring(0, 64));
+
+            return false;
+        }
+    }
+
+    /*
+    Maps a set of file (metadata) to items.
+     */
+    private static List<Item> mapToItems(List<FileMetadata> files) {
+        List<Item> resultsList = new ArrayList<>();
+        files.stream()
+                .map(fileMetadata -> {
+                    if (fileMetadata.hasId()) {
+                        return Item.newBuilder()
+                                .setId(fileMetadata.getId())
+                                .build();
+                    } else {
+                        return Item.newBuilder()
+                                .setExternalId(fileMetadata.getExternalId())
+                                .build();
+                    }
+                })
+                .forEach(item -> resultsList.add(item));
+
+        return resultsList;
+    }
+
+    /*
+    Builds the file container (file metadata and binary) for an SVG (interactive P&ID) detection result.
+    The file binary is collected directly from the detection result and the file metadata is based on the
+    origin file's metadata.
+     */
+    private static List<FileContainer> buildSvgFileContainer(DiagramResponse diagramResponse,
+                                                             FileMetadata originFileMetadata) throws Exception {
+        List<FileContainer> fileContainerList = new ArrayList<>();
+        final String originId = originFileMetadata.hasExternalId() ?
+                originFileMetadata.getExternalId() : String.valueOf(originFileMetadata.getId());
+        final Long originUploadedTime = originFileMetadata.hasUploadedTime() ?
+                originFileMetadata.getUploadedTime() : -1L;
+        final String nameNoSuffix =
+                originFileMetadata.getName().replaceFirst("\\.(\\w){1,5}$", "");
+        final String source = "interactive-pnid-pipeline";
+        final Long targetDataSetId = getDataSetExternalIdMap().getOrDefault(fileTargetDataSetExternalId, -1L);
+
+        if (targetDataSetId == -1) {
+            String message = "Cannot identify id for target dataset: "
+                    + fileTargetDataSetExternalId;
+            LOG.error(message);
+            throw new Exception(message);
+        }
+
+        // Build the common file metadata
+        ImmutableList skipMetadataKey = ImmutableList.of("content:dos_extension", "content:object_name",
+                "content:r_object_id","files:name");
+        Map<String, String> metadata = new HashMap<>(originFileMetadata.getMetadataCount());
+        originFileMetadata.getMetadataMap().entrySet().stream()
+                .filter(entry -> !skipMetadataKey.contains(entry.getKey()))
+                .forEach(entry -> metadata.put(entry.getKey(), entry.getValue()));
+
+        FileMetadata.Builder commonMetadataBuilder = FileMetadata.newBuilder()
+                .setDataSetId(targetDataSetId)
+                .addAllAssetIds(originFileMetadata.getAssetIdsList())
+                .putAllMetadata(metadata)
+                .putMetadata(originDocExtIdKey, originFileMetadata.getExternalId())
+                .putMetadata(originDocUploadedTimeKey, String.valueOf(originUploadedTime))
+                .putMetadata(contextAgentKey, contextAgent)
+                .putMetadata(contextAlgorithmKey, contextAlgorithm);
+
+        // Must check if the source document has these parameters. If not, they will incorrectly be set to "empty".
+        if (originFileMetadata.hasDirectory()) {
+            commonMetadataBuilder.setDirectory(originFileMetadata.getDirectory());
+        }
+        if (originFileMetadata.hasSource()) {
+            commonMetadataBuilder.setSource(originFileMetadata.getSource());
+        } else {
+            commonMetadataBuilder.setSource(source);
+        }
+        FileMetadata commonMetadata = commonMetadataBuilder.build();
+
+        // Iterate through the individual pages of the convert results
+        for (DiagramResponse.ConvertResult convertResult : diagramResponse.getConvertResultsList()) {
+            // Build the file containers
+            if (convertResult.hasSvgBinary()) {
+                FileContainer.Builder svgContainerBuilder = FileContainer.newBuilder()
+                        .setFileMetadata(FileMetadata.newBuilder(commonMetadata)
+                                .setExternalId("convSvg:" + originId + ":page" + convertResult.getPage())
+                                .setName(nameNoSuffix + "-page" + convertResult.getPage() + ".svg")
+                                .setMimeType("image/svg+xml"))
+                        .setFileBinary(FileBinary.newBuilder()
+                                .setBinary(convertResult.getSvgBinary()));
+
+                fileContainerList.add(svgContainerBuilder.build());
+            }
+            if (convertResult.hasPngBinary()) {
+                FileContainer.Builder pngContainerBuilder = FileContainer.newBuilder()
+                        .setFileMetadata(FileMetadata.newBuilder(commonMetadata)
+                                .setExternalId("convPng:" + originId + ":page" + convertResult.getPage())
+                                .setName(nameNoSuffix + "-page" + convertResult.getPage() + ".png")
+                                .setMimeType("image/png"))
+                        .setFileBinary(FileBinary.newBuilder()
+                                .setBinary(convertResult.getPngBinary()));
+
+                fileContainerList.add(pngContainerBuilder.build());
+            }
+        }
+
+        return fileContainerList;
     }
 
     /*
     Read secrets from GCP Secret Manager.
+
     If we are using workload identity on GKE, we have to take into account that the identity metadata
     service for the pod may take a few seconds to initialize. Therefore the implicit call to get
     identity may fail if it happens at the very start of the pod. The workaround is to perform a
