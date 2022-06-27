@@ -1,0 +1,20 @@
+# Add support for reading an external config file. This enables using the following options for
+# configuring the module:
+# - environment variables
+# - YAML config file located at the absolute path "/config/config.yaml"
+smallrye:
+  config:
+    locations: "/config/config.yaml"
+
+# Default config settings for your module
+cdf:
+  authentication:
+    apiKey:
+    apiKeyGcp: ""
+
+# Default configuration for metrics.
+metrics:
+  enable: false
+  jobName: "k8-demo"
+  pushGateway:
+    url: "http://stable-prometheus-pushgateway.internal-services:9091"

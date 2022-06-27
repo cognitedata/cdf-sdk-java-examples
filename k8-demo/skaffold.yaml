@@ -1,0 +1,14 @@
+apiVersion: skaffold/v2beta27
+kind: Config
+metadata:
+  name: k8-demo
+build:
+  artifacts:
+  - image: k8-demo
+    context: .
+    jib:
+      project: com.cognite:k8-demo
+deploy:
+  kustomize:
+    paths:
+    - ./kubernetes-manifests/
