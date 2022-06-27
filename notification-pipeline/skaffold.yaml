@@ -1,4 +1,4 @@
-apiVersion: skaffold/v2beta22
+apiVersion: skaffold/v2beta29
 kind: Config
 metadata:
   name: notification-pipeline
