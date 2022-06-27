@@ -1,0 +1,17 @@
+apiVersion: skaffold/v2beta22
+kind: Config
+metadata:
+  name: workorder-pipeline
+build:
+  artifacts:
+  - image: workorder-pipeline
+    context: .
+    jib:
+      project: com.cognite:workorder-pipeline
+  tagPolicy:
+    sha256: {}
+deploy:
+  kubectl:
+    manifests:
+    - kubernetes-manifests/workorder-pipeline.configmap.yaml
+    - kubernetes-manifests/workorder-pipeline.cronjob.yaml

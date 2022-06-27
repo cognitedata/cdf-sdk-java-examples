@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rest-extractor-workcenter-config
+data:
+  config.yaml: |
+    # The http source configuration
+    source:
+      uri: "https://fiori.s5consulting.no/sap/opu/odata/sap/API_WORK_CENTERS/A_WorkCenters?$format=json"
+      method: "GET"
+      body: ""
+      authentication:
+        protocol: "basic"
+        id: "ext_cognite"
+        secret:
+        secretGcp: ""
+
+    response:
+      format: "json"
+      path: "d.results"
+      rowKey: ["WorkCenterInternalID"]
+
+    target:
+      rawDb: "sap-extract"
+      rawTable: "workcenter"
+      authentication:
+        apiKey:
+        apiKeyGcp: ""

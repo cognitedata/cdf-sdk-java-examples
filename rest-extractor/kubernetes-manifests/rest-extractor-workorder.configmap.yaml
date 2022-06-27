@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rest-extractor-workorder-config
+data:
+  config.yaml: |
+    # The http source configuration
+    source:
+      uri: "https://fiori.s5consulting.no/sap/opu/odata/sap/ZODATA_MAINTENANCE_ORDER_SRV/ZEAM_C_OBJ_MAIN_ORDER?$format=json&$expand=to_WorkOrderConfirmations,to_MaintenanceRevision,to_MaintenanceRevision/to_IsCompleted,to_MaintOrderOperation,to_WorkOrderObjects"
+      method: "GET"
+      body: ""
+      authentication:
+        protocol: "basic"
+        id: "ext_cognite"
+        secret:
+        secretGcp: ""
+
+    response:
+      format: "json"
+      path: "d.results"
+      rowKey: ["Mandt", "MaintenanceOrder"]
+
+    target:
+      rawDb: "sap-extract"
+      rawTable: "workorder"
+      authentication:
+        apiKey:
+        apiKeyGcp: ""

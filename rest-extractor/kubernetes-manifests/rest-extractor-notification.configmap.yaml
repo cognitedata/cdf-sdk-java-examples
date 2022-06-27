@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rest-extractor-notification-config
+data:
+  config.yaml: |
+    # The http source configuration
+    source:
+      uri: "https://fiori.s5consulting.no/sap/opu/odata/sap/EAM_OBJPG_MAINTNOTIFICATION_SRV/C_ObjPgMaintNotification?$format=json&$expand=to_ActiveSystemStatus,to_ActiveUserStatus,to_SystemStatus,to_UserStatusWithStatusNumber,to_TechObjIsEquipOrFuncnlLoc"
+      method: "GET"
+      body: ""
+      authentication:
+        protocol: "basic"
+        id: "ext_cognite"
+        secret:
+        secretGcp: ""
+
+    response:
+      format: "json"
+      path: "d.results"
+      rowKey: ["Mandt", "MaintenanceNotification"]
+
+    target:
+      rawDb: "sap-extract"
+      rawTable: "notification"
+      authentication:
+        apiKey:
+        apiKeyGcp: ""

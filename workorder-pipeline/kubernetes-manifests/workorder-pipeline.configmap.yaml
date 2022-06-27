@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: workorder-pipeline-config
+data:
+  config.yaml: |
+    # Default config settings
+    cdf:
+      authentication:
+        apiKey:
+        apiKeyGcp: ""
+
+    source:
+      rawDb: "sap-extract"
+      table: "workorder"

@@ -1,0 +1,17 @@
+apiVersion: skaffold/v2beta21
+kind: Config
+metadata:
+  name: asset-hierarchy-pipeline
+build:
+  artifacts:
+  - image: asset-hierarchy-pipeline
+    context: .
+    jib:
+      project: com.cognite:asset-hierarchy-pipeline
+  tagPolicy:
+    sha256: {}
+deploy:
+  kubectl:
+    manifests:
+    - kubernetes-manifests/asset-hierarchy-pipeline.configmap.yaml
+    - kubernetes-manifests/asset-hierarchy-pipeline.cronjob.yaml

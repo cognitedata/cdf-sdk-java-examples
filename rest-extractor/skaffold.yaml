@@ -1,0 +1,26 @@
+apiVersion: skaffold/v2beta22
+kind: Config
+metadata:
+  name: rest-extractor
+build:
+  artifacts:
+  - image: rest-extractor
+    context: .
+    jib:
+      project: com.cognite:rest-extractor
+  tagPolicy:
+    sha256: {}
+deploy:
+  kubectl:
+    manifests:
+    #- kubernetes-manifests/*.yaml
+      - kubernetes-manifests/rest-extractor-equipment.configmap.yaml
+      - kubernetes-manifests/rest-extractor-equipment.cronjob.yaml
+      - kubernetes-manifests/rest-extractor-floc.configmap.yaml
+      - kubernetes-manifests/rest-extractor-floc.cronjob.yaml
+      - kubernetes-manifests/rest-extractor-notification.configmap.yaml
+      - kubernetes-manifests/rest-extractor-notification.cronjob.yaml
+      - kubernetes-manifests/rest-extractor-workorder.configmap.yaml
+      - kubernetes-manifests/rest-extractor-workorder.cronjob.yaml
+      - kubernetes-manifests/rest-extractor-workcenter.configmap.yaml
+      - kubernetes-manifests/rest-extractor-workcenter.cronjob.yaml

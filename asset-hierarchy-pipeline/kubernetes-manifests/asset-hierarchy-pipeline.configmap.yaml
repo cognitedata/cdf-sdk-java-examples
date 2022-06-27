@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: asset-hierarchy-pipeline-config
+data:
+  config.yaml: |
+    # Default config settings
+    cdf:
+      authentication:
+        apiKey:
+        apiKeyGcp: ""
+
+    source:
+      rawDb: "sap-extract"
+      flocTable: "functional-location"
+      eqTable: "equipment"
