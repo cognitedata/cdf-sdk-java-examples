@@ -1,30 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
 <configuration>
     <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
-        <!-- encoders are assigned the type
-             ch.qos.logback.classic.encoder.PatternLayoutEncoder by default -->
+        <target>System.out</target>
+        <filter class="ch.qos.logback.classic.filter.LevelFilter">
+            <level>INFO</level>
+            <onMatch>ACCEPT</onMatch>
+            <onMismatch>NEUTRAL</onMismatch>
+        </filter>
+        <filter class="ch.qos.logback.classic.filter.LevelFilter">
+            <level>DEBUG</level>
+            <onMatch>ACCEPT</onMatch>
+            <onMismatch>DENY</onMismatch>
+        </filter>
         <encoder>
-            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+            <Pattern>%d [%thread] %-5level %logger{36} - %msg%n</Pattern>
         </encoder>
     </appender>
-    <appender name="FILE" class="ch.qos.logback.core.FileAppender">
-        <file>testFile.log</file>
-        <append>true</append>
-        <!-- set immediateFlush to false for much higher logging throughput -->
-        <immediateFlush>true</immediateFlush>
-        <!-- encoders are assigned the type
-             ch.qos.logback.classic.encoder.PatternLayoutEncoder by default -->
+    <appender name="STDERR" class="ch.qos.logback.core.ConsoleAppender">
+        <target>System.err</target>
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>WARN</level>
+        </filter>
         <encoder>
-            <pattern>%-4relative [%thread] %-5level %logger{35} - %msg%n</pattern>
+            <Pattern>%d [%thread] %-5level %logger{36} - %msg%n</Pattern>
         </encoder>
     </appender>
 
-    <logger name="com.cognite.beam.io" level="INFO"/>
-    <logger name="com.cognite.client" level="INFO"/>
-    <logger name="com.cognite.client.ApiBase" level="INFO"/>
-    <logger name="com.cognite.client.RawRows" level="INFO"/>
-
+    <!--
+    <logger name="com.base22" level="TRACE"/>
+-->
     <root level="info">
         <appender-ref ref="STDOUT" />
-        <appender-ref ref="FILE" />
+        <appender-ref ref="STDERR" />
     </root>
 </configuration>
