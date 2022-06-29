@@ -6,4 +6,4 @@ metrics:
   enable: false
   jobName: "my-k8-demo"
   pushGateway:
-    url: "http://stable-prometheus-pushgateway.internal-services:9091"
+    url: "http://prometheus-pushgateway.victoria-metrics:9091"

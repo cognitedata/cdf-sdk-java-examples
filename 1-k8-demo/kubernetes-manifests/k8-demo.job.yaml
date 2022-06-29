@@ -3,6 +3,7 @@ kind: Job
 metadata:
   name: k8-demo
 spec:
+  ttlSecondsAfterFinished: 10
   template:
     spec:
       containers:

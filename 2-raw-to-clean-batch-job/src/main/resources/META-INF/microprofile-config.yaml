@@ -6,11 +6,19 @@ smallrye:
   config:
     locations: "/config/config.yaml"
 
-# Default config settings for your module
+# Default config settings for your module. These settings will be applied unless you override them with a 
+# configuration file and/or environment variable. We recommend using a configuration file (i.e. ConfigMap) to set all
+# parameters with the exception of secrets which should be linked into the pod as env variables via K8 Secrets.
+
+# The authentication section
 cdf:
   authentication:
     apiKey:
     apiKeyGcp: ""
+
+source:
+  rawDb: "sap-extract"
+  table: "notification"
 
 # Default configuration for metrics.
 metrics:
