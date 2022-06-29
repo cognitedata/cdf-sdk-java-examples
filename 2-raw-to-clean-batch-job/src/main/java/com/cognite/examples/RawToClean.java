@@ -24,7 +24,36 @@ import java.util.stream.Collectors;
 
 public class RawToClean {
     private static Logger LOG = LoggerFactory.getLogger(RawToClean.class);
-    private final static String baseURL = "https://api.cognitedata.com";
+
+    // cdf auth config
+    private static final Optional<String> apiKey =
+            ConfigProvider.getConfig().getOptionalValue("cdf.authentication.apiKey", String.class);
+    private static final Optional<String> apiKeyGcp =
+            ConfigProvider.getConfig().getOptionalValue("cdf.authentication.apiKeyGcp", String.class);
+
+    // raw source tables
+    private static final String rawDb = ConfigProvider.getConfig().getValue("source.rawDb", String.class);
+    private static final String rawTable =
+            ConfigProvider.getConfig().getValue("source.table", String.class);
+
+    // Metrics configs. From config file / env variables
+    private static final boolean enableMetrics =
+            ConfigProvider.getConfig().getValue("metrics.enable", Boolean.class);
+    private static final String metricsJobName = ConfigProvider.getConfig().getValue("metrics.jobName", String.class);
+    private static final Optional<String> pushGatewayUrl =
+            ConfigProvider.getConfig().getOptionalValue("metrics.pushGateway.url", String.class);
+
+
+    /*
+    Metrics section. Define the metrics to expose.
+     */
+    static final CollectorRegistry collectorRegistry = new CollectorRegistry();
+    static final Gauge jobDurationSeconds = Gauge.build()
+            .name("job_duration_seconds").help("Job duration in seconds").register(collectorRegistry);
+    static final Gauge jobStartTimeStamp = Gauge.build()
+            .name("job_start_timestamp").help("Job start time stamp").register(collectorRegistry);
+    static final Gauge errorGauge = Gauge.build()
+            .name("errors").help("Total job errors").register(collectorRegistry);
 
     public static void main(String[] args) throws Exception {
         Instant startInstant = Instant.now();
@@ -111,54 +140,19 @@ public class RawToClean {
     }
 
     /*
-    Read secrets from GCP Secret Manager.
-    If we are using workload identity on GKE, we have to take into account that the identity metadata
-    service for the pod may take a few seconds to initialize. Therefore the implicit call to get
-    identity may fail if it happens at the very start of the pod. The workaround is to perform a
-    retry.
+    Push the current metrics to the push gateway.
      */
-    private static String getGcpSecret(String projectId, String secretId, String secretVersion) throws IOException {
-        int maxRetries = 3;
-        boolean success = false;
-        IOException exception = null;
-        String loggingPrefix = "getGcpSecret - ";
-        String returnValue = "";
-
-        for (int i = 0; i <= maxRetries && !success; i++) {
-            // Initialize client that will be used to send requests.
-            try (SecretManagerServiceClient client = SecretManagerServiceClient.create()) {
-                SecretVersionName name = SecretVersionName.of(projectId,
-                        secretId, secretVersion);
-
-                // Access the secret version.
-                AccessSecretVersionRequest request =
-                        AccessSecretVersionRequest.newBuilder().setName(name.toString()).build();
-                AccessSecretVersionResponse response = client.accessSecretVersion(request);
-                LOG.info(loggingPrefix + "Successfully read secret from GCP Secret Manager.");
-
-                returnValue = response.getPayload().getData().toStringUtf8();
-                success = true;
-            } catch (IOException e) {
-                String errorMessage = "Could not read secret from GCP secret manager. Will retry... " + e.getMessage();
-                LOG.warn(errorMessage);
-                exception = e;
+    private static void pushMetrics() {
+        if (pushGatewayUrl.isPresent()) {
+            try {
+                LOG.info("Pushing metrics to {}", pushGatewayUrl);
+                PushGateway pg = new PushGateway(new URL(pushGatewayUrl.get())); //9091
+                pg.pushAdd(collectorRegistry, metricsJobName);
+            } catch (Exception e) {
+                LOG.warn("Error when trying to push metrics: {}", e.toString());
             }
-            if (!success) {
-                // Didn't succeed in reading the secret. Pause the thread to wait for the metadata service to start.
-                try {
-                    Thread.sleep(1000l);
-                } catch (Exception e) {
-                    LOG.warn("Not able to pause thread: " + e);
-                }
-            }
+        } else {
+            LOG.warn("No metrics push gateway configured. Cannot push the metrics.");
         }
-
-        if (!success) {
-            // We didn't manage to read the secret
-            LOG.error("Could not read secret from GCP secret manager: {}", exception.toString());
-            throw exception;
-        }
-
-        return returnValue;
     }
 }
