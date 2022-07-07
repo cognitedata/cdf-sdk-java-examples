@@ -43,7 +43,6 @@ public class RawToClean {
     private static final Optional<String> pushGatewayUrl =
             ConfigProvider.getConfig().getOptionalValue("metrics.pushGateway.url", String.class);
 
-
     /*
     Metrics section. Define the metrics to expose.
      */
@@ -51,11 +50,42 @@ public class RawToClean {
     static final Gauge jobDurationSeconds = Gauge.build()
             .name("job_duration_seconds").help("Job duration in seconds").register(collectorRegistry);
     static final Gauge jobStartTimeStamp = Gauge.build()
-            .name("job_start_timestamp").help("Job start time stamp").register(collectorRegistry);
+            .name("job_start_timestamp").help("Job start timestamp").register(collectorRegistry);
     static final Gauge errorGauge = Gauge.build()
-            .name("errors").help("Total job errors").register(collectorRegistry);
+            .name("job_errors").help("Total job errors").register(collectorRegistry);
+    static final Gauge noElementsGauge = Gauge.build()
+            .name("job_no_elements_processed").help("Number of processed elements").register(collectorRegistry);
 
+    /*
+    The entry point of the code. It executes the main logic and push job metrics upon completion.
+     */
     public static void main(String[] args) throws Exception {
+        try {
+            // Execute the main logic
+            new RawToClean().run();
+
+            // This metric is only added to the registry after job success,
+            // so that a previous success in the Pushgateway isn't overwritten on failure.
+            Gauge jobCompletionTimeStamp = Gauge.build()
+                    .name("job_completion_timestamp").help("Job completion time stamp").register(collectorRegistry);
+            jobCompletionTimeStamp.setToCurrentTime();
+        } catch (Exception e) {
+            LOG.error("Unrecoverable error. Will exit. {}", e.toString());
+            errorGauge.inc();
+            System.exit(1); // container exit code for application error, etc.
+        } finally {
+            if (enableMetrics) {
+                pushMetrics();
+            }
+        }
+    }
+
+    /*
+    The main logic to execute.
+     */
+    private void run() throws Exception {
+        Gauge.Timer jobDurationTimer = jobDurationSeconds.startTimer();
+        jobStartTimeStamp.setToCurrentTime();
         Instant startInstant = Instant.now();
         int countRows = 0;
 
@@ -98,7 +128,7 @@ public class RawToClean {
                     .map(row -> {
                         // Collect all columns into the metadata bucket of the event
                         Map<String, String> metadata = row.getColumns().getFieldsMap().entrySet().stream()
-                                .collect(Collectors.toMap((Map.Entry<String, Value> entry) -> entry.getKey(),
+                                .collect(Collectors.toMap(entry -> entry.getKey(),
                                         entry -> entry.getValue().getStringValue()));
 
                         // Add basic lineage info
@@ -107,9 +137,8 @@ public class RawToClean {
 
                         // Build the event object
                         return Event.newBuilder()
-                                .setExternalId(StringValue.of(row.getTableName() + row.getKey()))
-                                .setDescription(StringValue.of(
-                                        row.getColumns().getFieldsOrThrow("my-mandatory-field").getStringValue()))
+                                .setExternalId(row.getTableName() + row.getKey())
+                                .setDescription(row.getColumns().getFieldsOrThrow("my-mandatory-field").getStringValue())
                                 .putAllMetadata(metadata)
                                 .setDataSetId(dataSets.get(0).getId())
                                 .build();
@@ -123,6 +152,7 @@ public class RawToClean {
         LOG.info("Finished processing {} rows from raw. Duration {}",
                 countRows,
                 Duration.between(startInstant, Instant.now()));
+        jobDurationTimer.setDuration();
     }
 
     /*

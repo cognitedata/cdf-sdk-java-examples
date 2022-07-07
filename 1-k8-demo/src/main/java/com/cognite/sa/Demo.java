@@ -44,7 +44,7 @@ public class Demo {
     static final Gauge jobStartTimeStamp = Gauge.build()
             .name("job_start_timestamp").help("Job start time stamp").register(collectorRegistry);
     static final Gauge errorGauge = Gauge.build()
-            .name("errors").help("Total job errors").register(collectorRegistry);
+            .name("job_errors").help("Total job errors").register(collectorRegistry);
 
     /*
     The entry point of the code. It executes the main logic and push job metrics upon completion.
@@ -62,7 +62,7 @@ public class Demo {
         } catch (Exception e) {
             LOG.error("Unrecoverable error. Will exit. {}", e.toString());
             errorGauge.inc();
-            System.exit(126); // exit code for permission problems, command cannot execute etc.
+            System.exit(1); // container exit code for execution errors, etc.
         } finally {
             if (enableMetrics) {
                 pushMetrics();
