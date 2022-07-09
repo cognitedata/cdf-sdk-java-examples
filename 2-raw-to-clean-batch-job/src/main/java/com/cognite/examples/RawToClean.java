@@ -24,7 +24,9 @@ import java.util.stream.Collectors;
 public class RawToClean {
     private static Logger LOG = LoggerFactory.getLogger(RawToClean.class);
 
-    // cdf project config
+    /*
+    CDF project config. From config file / env variables.
+     */
     private static final String cdfHost =
             ConfigProvider.getConfig().getValue("cognite.host", String.class);
     private static final Optional<String> cdfProject =
@@ -38,15 +40,20 @@ public class RawToClean {
     private static final Optional<String> aadTenantId =
             ConfigProvider.getConfig().getOptionalValue("cognite.azureADTenantId", String.class);
 
-    // raw source tables
+    /*
+    CDF.Raw source table configuration. From config file / env variables.
+     */
     private static final String rawDb = ConfigProvider.getConfig().getValue("source.rawDb", String.class);
     private static final String rawTable =
             ConfigProvider.getConfig().getValue("source.table", String.class);
 
-    // Metrics configs. From config file / env variables
+    /*
+    Metrics target configuration. From config file / env variables.
+     */
     private static final boolean enableMetrics =
             ConfigProvider.getConfig().getValue("metrics.enable", Boolean.class);
-    private static final String metricsJobName = ConfigProvider.getConfig().getValue("metrics.jobName", String.class);
+    private static final String metricsJobName =
+            ConfigProvider.getConfig().getValue("metrics.jobName", String.class);
     private static final Optional<String> pushGatewayUrl =
             ConfigProvider.getConfig().getOptionalValue("metrics.pushGateway.url", String.class);
 
@@ -63,7 +70,7 @@ public class RawToClean {
     static final Gauge noElementsGauge = Gauge.build()
             .name("job_no_elements_processed").help("Number of processed elements").register(collectorRegistry);
 
-    private CogniteClient client = null;
+    private CogniteClient cogniteClient = null;
 
     /*
     The entry point of the code. It executes the main logic and push job metrics upon completion.
@@ -93,16 +100,14 @@ public class RawToClean {
     The main logic to execute.
      */
     private void run() throws Exception {
+        Instant startInstant = Instant.now();
+        LOG.info("Starting raw to clean pipeline...");
+
+        // Prepare the job start metrics
         Gauge.Timer jobDurationTimer = jobDurationSeconds.startTimer();
         jobStartTimeStamp.setToCurrentTime();
-        Instant startInstant = Instant.now();
+
         int countRows = 0;
-
-        // Get the source table via env variables
-        String dbName = System.getenv("RAW_DB").split("\\.")[0];
-        String dbTable = System.getenv("RAW_DB").split("\\.")[1];
-
-        CogniteClient client = getClient();
 
         // Get the data set id
         String dataSetExternalId = System.getenv("DATASET_EXT_ID");
@@ -114,7 +119,7 @@ public class RawToClean {
         }
         LOG.info("Looking up the data set external id: {}.",
                 dataSetExternalId);
-        List<DataSet> dataSets = client.datasets()
+        List<DataSet> dataSets = getCogniteClient().datasets()
                 .retrieve(ImmutableList.of(Item.newBuilder().setExternalId(dataSetExternalId).build()));
 
         if (dataSets.size() != 1) {
@@ -126,9 +131,9 @@ public class RawToClean {
 
         // Set up the reader for the raw table
         LOG.info("Starting to read the raw table {}.{}.",
-                dbName,
-                dbTable);
-        Iterator<List<RawRow>> iterator = client.raw().rows().list(dbName, dbTable);
+                rawDb,
+                rawTable);
+        Iterator<List<RawRow>> iterator = getCogniteClient().raw().rows().list(rawDb, rawTable);
 
         // Iterate through all rows in batches and write to clean. This will effectively "stream" through
         // the data so that we have constant memory usage no matter how large the data set is.
@@ -154,7 +159,7 @@ public class RawToClean {
                     })
                     .collect(Collectors.toList());
 
-            client.events().upsert(events);
+            getCogniteClient().events().upsert(events);
             countRows += events.size();
         }
 
@@ -167,20 +172,20 @@ public class RawToClean {
     /*
     Instantiate the cognite client.
      */
-    private CogniteClient getClient() throws Exception {
-        if (null == client) {
+    private CogniteClient getCogniteClient() throws Exception {
+        if (null == cogniteClient) {
             Preconditions.checkState(cdfProject.isPresent(),
                     "CDF project must be specified in the configuration.");
             // The client has not been instantiated yet
             if (clientId.isPresent() && clientSecret.isPresent() && aadTenantId.isPresent()) {
-                client = CogniteClient.ofClientCredentials(
+                cogniteClient = CogniteClient.ofClientCredentials(
                         clientId.get(),
                         clientSecret.get(),
                         TokenUrl.generateAzureAdURL(aadTenantId.get()))
                         .withProject(cdfProject.get())
                         .withBaseUrl(cdfHost);
             } else if (apiKey.isPresent()) {
-                client = CogniteClient.ofKey(apiKey.get())
+                cogniteClient = CogniteClient.ofKey(apiKey.get())
                         .withProject(cdfProject.get())
                         .withBaseUrl(cdfHost);
             } else {
@@ -190,7 +195,7 @@ public class RawToClean {
             }
         }
 
-        return client;
+        return cogniteClient;
     }
 
     /*

@@ -3,16 +3,14 @@ package com.cognite.sa.transform;
 import com.cognite.client.CogniteClient;
 import com.cognite.client.Request;
 import com.cognite.client.config.ClientConfig;
+import com.cognite.client.config.TokenUrl;
 import com.cognite.client.config.UpsertMode;
 import com.cognite.client.dto.Asset;
 import com.cognite.client.dto.Event;
 import com.cognite.client.dto.RawRow;
 import com.cognite.client.util.ParseStruct;
 import com.cognite.client.util.ParseValue;
-import com.google.cloud.secretmanager.v1.AccessSecretVersionRequest;
-import com.google.cloud.secretmanager.v1.AccessSecretVersionResponse;
-import com.google.cloud.secretmanager.v1.SecretManagerServiceClient;
-import com.google.cloud.secretmanager.v1.SecretVersionName;
+import com.google.common.base.Preconditions;
 import com.google.protobuf.Value;
 import com.google.protobuf.util.Values;
 import io.prometheus.client.CollectorRegistry;
@@ -24,7 +22,6 @@ import org.eclipse.microprofile.config.ConfigProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
 import java.net.URL;
 import java.time.Duration;
 import java.time.Instant;
@@ -36,21 +33,36 @@ import java.util.stream.Collectors;
 public class NotificationTransform {
     private static Logger LOG = LoggerFactory.getLogger(NotificationTransform.class);
 
-    // cdf auth config
+    /*
+    CDF project config. From config file / env variables.
+     */
+    private static final String cdfHost =
+            ConfigProvider.getConfig().getValue("cognite.host", String.class);
+    private static final Optional<String> cdfProject =
+            ConfigProvider.getConfig().getOptionalValue("cognite.project", String.class);
     private static final Optional<String> apiKey =
-            ConfigProvider.getConfig().getOptionalValue("cdf.authentication.apiKey", String.class);
-    private static final Optional<String> apiKeyGcp =
-            ConfigProvider.getConfig().getOptionalValue("cdf.authentication.apiKeyGcp", String.class);
+            ConfigProvider.getConfig().getOptionalValue("cognite.apiKey", String.class);
+    private static final Optional<String> clientId =
+            ConfigProvider.getConfig().getOptionalValue("cognite.clientId", String.class);
+    private static final Optional<String> clientSecret =
+            ConfigProvider.getConfig().getOptionalValue("cognite.clientSecret", String.class);
+    private static final Optional<String> aadTenantId =
+            ConfigProvider.getConfig().getOptionalValue("cognite.azureADTenantId", String.class);
 
-    // raw source tables
+    /*
+    CDF.Raw source table configuration. From config file / env variables.
+     */
     private static final String rawDb = ConfigProvider.getConfig().getValue("source.rawDb", String.class);
     private static final String rawTable =
             ConfigProvider.getConfig().getValue("source.table", String.class);
 
-    // Metrics configs
+    /*
+    Metrics target configuration. From config file / env variables.
+     */
     private static final boolean enableMetrics =
             ConfigProvider.getConfig().getValue("metrics.enable", Boolean.class);
-    private static final String metricsJobName = ConfigProvider.getConfig().getValue("metrics.jobName", String.class);
+    private static final String metricsJobName =
+            ConfigProvider.getConfig().getValue("metrics.jobName", String.class);
     private static final Optional<String> pushGatewayUrl =
             ConfigProvider.getConfig().getOptionalValue("metrics.pushGateway.url", String.class);
 
@@ -82,7 +94,7 @@ public class NotificationTransform {
             new NotificationTransform().run();
         } catch (Exception e) {
             LOG.error("Unrecoverable error. Will exit. {}", e.toString());
-            System.exit(126); // exit code for permission problems, command cannot execute etc.
+            System.exit(1); // exit code for container execution errors, etc.
         }
     }
 
@@ -315,26 +327,29 @@ public class NotificationTransform {
     }
 
     /*
-    Builds the cognite client.
+    Instantiate the cognite client.
      */
     private CogniteClient getCogniteClient() throws Exception {
         if (null == cogniteClient) {
-            String key = "";
-            if (apiKeyGcp.isPresent()) {
-                LOG.info("Getting api key from GCP Secret Manager.");
-                key = getGcpSecret(apiKeyGcp.get().split("\\.")[0],
-                        apiKeyGcp.get().split("\\.")[1],
-                        "latest");
+            Preconditions.checkState(cdfProject.isPresent(),
+                    "CDF project must be specified in the configuration.");
+            // The client has not been instantiated yet
+            if (clientId.isPresent() && clientSecret.isPresent() && aadTenantId.isPresent()) {
+                cogniteClient = CogniteClient.ofClientCredentials(
+                                clientId.get(),
+                                clientSecret.get(),
+                                TokenUrl.generateAzureAdURL(aadTenantId.get()))
+                        .withProject(cdfProject.get())
+                        .withBaseUrl(cdfHost);
+            } else if (apiKey.isPresent()) {
+                cogniteClient = CogniteClient.ofKey(apiKey.get())
+                        .withProject(cdfProject.get())
+                        .withBaseUrl(cdfHost);
+            } else {
+                String message = "Unable to instantiate the Cognite Client. No valid authentication configuration.";
+                LOG.error(message);
+                throw new Exception(message);
             }
-            if (apiKey.isPresent()) {
-                LOG.info("Getting api key from env variable or system properties.");
-                key = apiKey.get();
-            }
-
-            cogniteClient = CogniteClient.ofKey(key)
-                    .withBaseUrl("https://greenfield.cognitedata.com")
-                    .withClientConfig(ClientConfig.create()
-                            .withUpsertMode(UpsertMode.REPLACE));
         }
 
         return cogniteClient;
