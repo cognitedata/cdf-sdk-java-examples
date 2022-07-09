@@ -1,10 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
-
     <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
         <target>System.out</target>
         <filter class="ch.qos.logback.classic.filter.LevelFilter">
             <level>INFO</level>
+            <onMatch>ACCEPT</onMatch>
+            <onMismatch>NEUTRAL</onMismatch>
+        </filter>
+        <filter class="ch.qos.logback.classic.filter.LevelFilter">
+            <level>DEBUG</level>
             <onMatch>ACCEPT</onMatch>
             <onMismatch>DENY</onMismatch>
         </filter>
@@ -22,9 +26,6 @@
         </encoder>
     </appender>
 
-    <!--
-    <logger name="com.base22" level="TRACE"/>
--->
     <root level="info">
         <appender-ref ref="STDOUT" />
         <appender-ref ref="STDERR" />

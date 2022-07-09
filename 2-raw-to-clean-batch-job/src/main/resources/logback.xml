@@ -26,9 +26,6 @@
         </encoder>
     </appender>
 
-    <!--
-    <logger name="com.base22" level="TRACE"/>
--->
     <root level="info">
         <appender-ref ref="STDOUT" />
         <appender-ref ref="STDERR" />
