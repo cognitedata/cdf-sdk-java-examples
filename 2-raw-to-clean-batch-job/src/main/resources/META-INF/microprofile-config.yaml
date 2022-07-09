@@ -8,17 +8,28 @@ smallrye:
 
 # Default config settings for your module. These settings will be applied unless you override them with a 
 # configuration file and/or environment variable. We recommend using a configuration file (i.e. ConfigMap) to set all
-# parameters with the exception of secrets which should be linked into the pod as env variables via K8 Secrets.
+# parameters except secrets which should be linked into the pod as env variables via K8 Secrets.
 
-# The authentication section
-cdf:
-  authentication:
-    apiKey:
-    apiKeyGcp: ""
+# Information about the Cognite Data Fusion (CDF) project
+cognite:
+  host: "https://api.cognitedata.com"
 
+  # CDF project
+  project:
+
+  # Api key authentication. You can also specify this entry via an env. variable COGNITE_APIKEY
+  apiKey:
+
+  # OpenID Connect client credentials authentication
+  clientId:
+  # The client secret should be specified via an env. variable COGNITE_CLIENTSECRET
+  clientSecret:
+  azureADTenantId:
+
+# Specify which raw db and table to read source data from.
 source:
-  rawDb: "sap-extract"
-  table: "notification"
+  rawDb: "raw-db-name"
+  table: "raw-table-name"
 
 # Default configuration for metrics.
 metrics:

@@ -1,10 +1,12 @@
 package com.cognite.examples;
 
 import com.cognite.client.CogniteClient;
+import com.cognite.client.config.TokenUrl;
 import com.cognite.client.dto.DataSet;
 import com.cognite.client.dto.Event;
 import com.cognite.client.dto.Item;
 import com.cognite.client.dto.RawRow;
+import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import io.prometheus.client.CollectorRegistry;
 import io.prometheus.client.Gauge;
@@ -22,11 +24,19 @@ import java.util.stream.Collectors;
 public class RawToClean {
     private static Logger LOG = LoggerFactory.getLogger(RawToClean.class);
 
-    // cdf auth config
+    // cdf project config
+    private static final String cdfHost =
+            ConfigProvider.getConfig().getValue("cognite.host", String.class);
+    private static final Optional<String> cdfProject =
+            ConfigProvider.getConfig().getOptionalValue("cognite.project", String.class);
     private static final Optional<String> apiKey =
-            ConfigProvider.getConfig().getOptionalValue("cdf.authentication.apiKey", String.class);
-    private static final Optional<String> apiKeyGcp =
-            ConfigProvider.getConfig().getOptionalValue("cdf.authentication.apiKeyGcp", String.class);
+            ConfigProvider.getConfig().getOptionalValue("cognite.apiKey", String.class);
+    private static final Optional<String> clientId =
+            ConfigProvider.getConfig().getOptionalValue("cognite.clientId", String.class);
+    private static final Optional<String> clientSecret =
+            ConfigProvider.getConfig().getOptionalValue("cognite.clientSecret", String.class);
+    private static final Optional<String> aadTenantId =
+            ConfigProvider.getConfig().getOptionalValue("cognite.azureADTenantId", String.class);
 
     // raw source tables
     private static final String rawDb = ConfigProvider.getConfig().getValue("source.rawDb", String.class);
@@ -52,6 +62,8 @@ public class RawToClean {
             .name("job_errors").help("Total job errors").register(collectorRegistry);
     static final Gauge noElementsGauge = Gauge.build()
             .name("job_no_elements_processed").help("Number of processed elements").register(collectorRegistry);
+
+    private CogniteClient client = null;
 
     /*
     The entry point of the code. It executes the main logic and push job metrics upon completion.
@@ -153,17 +165,32 @@ public class RawToClean {
     }
 
     /*
-    Instantiate the cognite client based on an api key hosted in GCP Secret Manager (key vault).
+    Instantiate the cognite client.
      */
-    private static CogniteClient getClient() throws Exception {
-        // Instantiate the client
-        LOG.info("Start instantiate the Cognite Client.");
+    private CogniteClient getClient() throws Exception {
+        if (null == client) {
+            Preconditions.checkState(cdfProject.isPresent(),
+                    "CDF project must be specified in the configuration.");
+            // The client has not been instantiated yet
+            if (clientId.isPresent() && clientSecret.isPresent() && aadTenantId.isPresent()) {
+                client = CogniteClient.ofClientCredentials(
+                        clientId.get(),
+                        clientSecret.get(),
+                        TokenUrl.generateAzureAdURL(aadTenantId.get()))
+                        .withProject(cdfProject.get())
+                        .withBaseUrl(cdfHost);
+            } else if (apiKey.isPresent()) {
+                client = CogniteClient.ofKey(apiKey.get())
+                        .withProject(cdfProject.get())
+                        .withBaseUrl(cdfHost);
+            } else {
+                String message = "Unable to instantiate the Cognite Client. No valid authentication configuration.";
+                LOG.error(message);
+                throw new Exception(message);
+            }
+        }
 
-        LOG.info("API key is hosted in Secret Manager.");
-        String projectId = System.getenv("CDF_API_KEY_SECRET_MANAGER").split("\\.")[0];
-        String secretId = System.getenv("CDF_API_KEY_SECRET_MANAGER").split("\\.")[1];
-        return CogniteClient.ofKey(getGcpSecret(projectId, secretId, "latest"))
-                .withBaseUrl(baseURL);
+        return client;
     }
 
     /*

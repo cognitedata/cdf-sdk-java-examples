@@ -1,11 +1,22 @@
 # Custom configuration options should be added to this file. It will be mapped into the
 # application pod and made available to the container as /config/config.yaml
 
-# The authentication section
-cdf:
-  authentication:
-    apiKey:
-    apiKeyGcp: ""
+# Information about the Cognite Data Fusion (CDF) project
+cognite:
+  # (Optional) CDF deployment target
+  host: "https://api.cognitedata.com"
+
+  # CDF project
+  project:
+
+  # Api key authentication. You can also specify this entry via an env. variable COGNITE_APIKEY
+  apiKey:
+
+  # OpenID Connect client credentials authentication
+  clientId:
+  # The client secret should be specified via an env. variable COGNITE_CLIENTSECRET
+  clientSecret:
+  azureADTenantId:
 
 source:
   rawDb: "sap-extract"
