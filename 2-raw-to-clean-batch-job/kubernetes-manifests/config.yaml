@@ -21,9 +21,15 @@ cognite:
   scopes:
     - "https://api.cognitedata.com/.default"
 
+# Source raw db and table to read source data from.
 source:
   rawDb: "sap-extract"
   table: "notification"
+
+# (Optional) Target data set and extraction pipelines
+target:
+  dataSetExternalId:
+  extractionPipelineExternalId:
 
 # Configuration for metrics.
 metrics:

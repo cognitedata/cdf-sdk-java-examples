@@ -28,10 +28,15 @@ cognite:
   scopes:
     - "https://api.cognitedata.com/.default"
 
-# Specify which raw db and table to read source data from.
+# Source raw db and table to read source data from.
 source:
   rawDb: "raw-db-name"
   table: "raw-table-name"
+
+# Target data set and extraction pipelines
+target:
+  dataSetExternalId:
+  extractionPipelineExternalId:
 
 # Default configuration for metrics.
 metrics:
