@@ -17,6 +17,9 @@ cognite:
   # The client secret should be specified via an env. variable COGNITE_CLIENTSECRET
   clientSecret:
   azureADTenantId:
+  # (Optional) Authentication scopes
+  scopes:
+    - "https://api.cognitedata.com/.default"
 
 source:
   rawDb: "sap-extract"

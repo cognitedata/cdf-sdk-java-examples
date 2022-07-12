@@ -39,6 +39,8 @@ public class RawToClean {
             ConfigProvider.getConfig().getOptionalValue("cognite.clientSecret", String.class);
     private static final Optional<String> aadTenantId =
             ConfigProvider.getConfig().getOptionalValue("cognite.azureADTenantId", String.class);
+    private static final String[] authScopes =
+            ConfigProvider.getConfig().getValue("cognite.scopes", String[].class);
 
     /*
     CDF.Raw source table configuration. From config file / env variables.
