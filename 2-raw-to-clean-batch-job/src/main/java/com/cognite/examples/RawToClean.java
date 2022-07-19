@@ -86,12 +86,13 @@ public class RawToClean {
     /*
     The entry point of the code. It executes the main logic and push job metrics upon completion.
      */
-    public static void main(String[] args) throws Exception {
+    public static void main(String[] args) {
+        boolean executionError = false;
         try {
             // Execute the main logic
             new RawToClean().run();
 
-            // This metric is only added to the registry after job success,
+            // The job completion metric is only added to the registry after job success,
             // so that a previous success in the Pushgateway isn't overwritten on failure.
             Gauge jobCompletionTimeStamp = Gauge.build()
                     .name("job_completion_timestamp").help("Job completion time stamp").register(collectorRegistry);
@@ -99,10 +100,13 @@ public class RawToClean {
         } catch (Exception e) {
             LOG.error("Unrecoverable error. Will exit. {}", e.toString());
             errorGauge.inc();
-            System.exit(1); // container exit code for application error, etc.
+            executionError = true;
         } finally {
             if (enableMetrics) {
                 pushMetrics();
+            }
+            if (executionError) {
+                System.exit(1); // container exit code for execution errors, etc.
             }
         }
     }
