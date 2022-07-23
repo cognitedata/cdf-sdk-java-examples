@@ -6,8 +6,10 @@ import com.cognite.client.dto.DataSet;
 import com.cognite.client.dto.Event;
 import com.cognite.client.dto.Item;
 import com.cognite.client.dto.RawRow;
+import com.cognite.client.util.ParseValue;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
+import com.google.protobuf.Value;
 import io.prometheus.client.CollectorRegistry;
 import io.prometheus.client.Gauge;
 import io.prometheus.client.exporter.PushGateway;
@@ -56,6 +58,11 @@ public class RawToClean {
             ConfigProvider.getConfig().getOptionalValue("target.dataSetExternalId", String.class);
     private static final Optional<String> extractionPipelineExtId =
             ConfigProvider.getConfig().getOptionalValue("target.extractionPipelineExternalId", String.class);
+
+    /*
+    Pipeline configuration
+     */
+    private static final String extIdPrefix = "source-name:";
 
     /*
     Metrics target configuration. From config file / env variables.
@@ -153,13 +160,86 @@ public class RawToClean {
         jobDurationTimer.setDuration();
     }
 
-    private Event parseRawRowToEvent(RawRow row) {
+    /*
+    The main logic for parsing a Raw row to the target data structure--in this case an Event. Keep the code
+    structured and readable for it to be easy to evolve and maintain.
+     */
+    private Event parseRawRowToEvent(RawRow row) throws Exception {
         final String loggingPrefix = "parseRawRowToEvent() - ";
 
-        // Collect all columns into the metadata bucket of the event
-        Map<String, String> metadata = row.getColumns().getFieldsMap().entrySet().stream()
-                .collect(Collectors.toMap(entry -> entry.getKey(),
-                        entry -> entry.getValue().getStringValue()));
+        /*
+        Configuration section. Defines key (raw) columns and values for the parsing and transform logic.
+         */
+        // Key columns
+        // These raw columns map to the event schema fields
+        final String extIdKey = "RawExtIdColumn";
+        final String descriptionKey = "RawDescriptionColumn";
+        final String startDateTimeKey = "RawStartDateTimeColumn";
+        final String endDataTimeKey = "RawEndDateTimeColumn";
+
+        // Fixed values
+        // Hardcoded values to add to the event schema fields
+        final String typeValue = "event-type";
+        final String subtypeValue = "event-subtype";
+        final String sourceValue = "data-source-name";
+
+        // Include / exclude columns
+        // For filtering the entries to the metadata bucket
+        final String excludeColumnPrefix = "exclude__";
+        List<String> excludeColumns = List.of("exclude-column-a", "exclude-column-b", "exclude-column-c");
+
+        /*
+        The parsing logic.
+         */
+        Event.Builder eventBuilder = Event.newBuilder();
+        Map<String, Value> columnsMap = row.getColumns().getFieldsMap();
+
+        // Add the mandatory fields
+        if (columnsMap.containsKey(extIdKey) && columnsMap.get(extIdKey).hasStringValue()) {
+            eventBuilder.setExternalId(extIdPrefix + columnsMap.get(extIdKey).getStringValue());
+        } else {
+            String message = String.format(loggingPrefix + "Could not parse field [%s].",
+                    extIdKey);
+            LOG.error(message);
+            throw new Exception(message);
+        }
+
+        // Add optional fields
+        if (columnsMap.containsKey(descriptionKey) && columnsMap.get(descriptionKey).hasStringValue()) {
+            eventBuilder.setDescription(columnsMap.get(descriptionKey).getStringValue());
+        }
+        if (columnsMap.containsKey(startDateTimeKey) && columnsMap.get(startDateTimeKey).hasNumberValue()) {
+            try {
+                Optional<Long> epochMs = parseEpochMs(columnsMap.get(startDateKey).getStringValue());
+                epochMs.ifPresent(eventBuilder::setStartTime);
+            } catch (NumberFormatException e) {
+                LOG.warn(loggingPrefix + "Could not parse value [{}] from column [{}] into numeric milliseconds.",
+                        columnsMap.get(endDateKey).getStringValue(),
+                        endDateKey);
+            }
+        }
+        if (columnsMap.containsKey(endDateKey) && columnsMap.get(endDateKey).hasStringValue()) {
+            try {
+                Optional<Long> epochMs = parseEpochMs(columnsMap.get(endDateKey).getStringValue());
+                epochMs.ifPresent(eventBuilder::setEndTime);
+            } catch (NumberFormatException e) {
+                LOG.warn(loggingPrefix + "Could not parse value [{}] from column [{}] into numeric milliseconds.",
+                        columnsMap.get(endDateKey).getStringValue(),
+                        endDateKey);
+            }
+        }
+
+        // Add fixed values
+        eventBuilder
+                .setSource(sourceValue)
+                .setType(typeValue)
+                .setSubtype(subtypeValue);
+
+        // Add fields to metadata based on the exclude filters
+        Map<String, String> metadata = columnsMap.entrySet().stream()
+                .filter(entry -> !entry.getKey().startsWith(excludeColumnPrefix))
+                .filter(entry -> !excludeColumns.contains(entry.getKey()))
+                .collect(Collectors.toMap(Map.Entry::getKey, entry -> ParseValue.parseString(entry.getValue())));
 
         // Add basic lineage info
         metadata.put("dataSource",
