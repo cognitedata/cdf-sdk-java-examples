@@ -68,16 +68,24 @@ Metrics are exposed as `prometheus metrics` via Prometheus client libraries. You
 Adding configurability allows you to easily reuse your data application by adjusting parameters at deployment time (as opposed to having to do code changes). `Smallrye Config` is a configuration library that enables configuration via yaml config files and environment variables. 
 
 `Smallrye` will try to resolve a configuration entry by checking a set of "sources":
-1. The default config file packaged with the code at `.src/main/resources/META-INF/microprofile.yaml`.
+1. The default config file packaged with the code at [./src/main/resources/META-INF/microprofile.yaml](./src/main/resources/META-INF/microprofile.yaml).
 2. The optional, deployment-provided config file at `./config/config.yaml`.
 3. Environment variables.
 4. System properties (set via the cmd arguments).
 
 A config source with a higher number will override a config source with a smaller number. I.e. an environment variable will override the config file setting.
 
-`Demo.java` illustrates how to access the configuration settings in your code.
+You should always provide a default config file packaged with the code at `./src/main/resources/META-INF/microprofile.yaml`. This file ensures you provide your module with sensible running defaults as well as serve as the configuration template for deployments. In the default config file you should also define the auth config keys, but not populate them with any values. Check the example [2-raw-to-clean-batch-job](../2-raw-to-clean-batch-job) for an illustration of how to deal with auth.
+
+[Demo.java](./src/main/java/com/cognite/sa/Demo.java) illustrates how to access the configuration settings in your code. Have a look at the static members near the top of the file.
 
 `./kubernetes-manifests/*` illustrate how to supply a configuration file when running this module as a container on K8s. The basic steps are as follows:
 1) Define the `config.yaml` file with the settings you want to apply. This would typically be all the configuration settings except the secrets (i.e. keys, passwords, etc.).
 2) Define the main application manifest, `k8-demo.job.yaml`. In this example, we use `Job` as the workload. You would typically use `CronJob`or `Deployment` in test/prod while `Job` is a good option for dev. In the manifest, we mount the configuration as a file for the container (your code) to read.
 3) Bind it all together via `kustomization.yaml`. 
+
+## Logging
+
+We recommend following container logging best-practices and route log entries to `st out` and `st error`. This ensures that the logs will be picked up by K8s. Then your K8s infrastructure can forward the logs to the sink of your choice via a centralized infrastructure as opposed to configuring each individual code module.
+
+In this example, we use [slf4j](https://www.slf4j.org/) and [Logback](https://logback.qos.ch/) as logging libraries. The logger configuration is defined at [./src/resources/logback.xml](./src/resources/logback.xml) and specifies logging to `st out/error`.
