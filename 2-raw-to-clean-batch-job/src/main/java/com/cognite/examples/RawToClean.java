@@ -2,14 +2,12 @@ package com.cognite.examples;
 
 import com.cognite.client.CogniteClient;
 import com.cognite.client.config.TokenUrl;
-import com.cognite.client.dto.DataSet;
-import com.cognite.client.dto.Event;
-import com.cognite.client.dto.Item;
-import com.cognite.client.dto.RawRow;
+import com.cognite.client.dto.*;
 import com.cognite.client.util.ParseValue;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.protobuf.Value;
+import com.google.protobuf.util.Values;
 import io.prometheus.client.CollectorRegistry;
 import io.prometheus.client.Gauge;
 import io.prometheus.client.exporter.PushGateway;
@@ -86,9 +84,13 @@ public class RawToClean {
             .name("job_errors").help("Total job errors").register(collectorRegistry);
     private static final Gauge noElementsGauge = Gauge.build()
             .name("job_no_elements_processed").help("Number of processed elements").register(collectorRegistry);
+    private static final Gauge noElementsContextualizedGauge = Gauge.build()
+            .name("job_no_elements_contextualized").help("Number of contextualized elements").register(collectorRegistry);
 
-    private CogniteClient cogniteClient = null;
-    private OptionalLong dataSetIntId = null;
+    // global data structures
+    private CogniteClient cogniteClient;
+    private OptionalLong dataSetIntId;
+    private Map<String, Long> assetLookupMap;
 
     /*
     The entry point of the code. It executes the main logic and push job metrics upon completion.
@@ -177,6 +179,9 @@ public class RawToClean {
         final String startDateTimeKey = "RawStartDateTimeColumn";
         final String endDataTimeKey = "RawEndDateTimeColumn";
 
+        // Contextualization configuration
+        final String assetReferenceKey = "RawAssetNameReferenceColumn";
+
         // Fixed values
         // Hardcoded values to add to the event schema fields
         final String typeValue = "event-type";
@@ -195,6 +200,8 @@ public class RawToClean {
         Map<String, Value> columnsMap = row.getColumns().getFieldsMap();
 
         // Add the mandatory fields
+        // If a mandatory field is missing, you should flag it and handle that record specifically. Either by failing
+        // the entire job, or putting the failed records in a "dead letter queue".
         if (columnsMap.containsKey(extIdKey) && columnsMap.get(extIdKey).hasStringValue()) {
             eventBuilder.setExternalId(extIdPrefix + columnsMap.get(extIdKey).getStringValue());
         } else {
@@ -203,30 +210,21 @@ public class RawToClean {
             LOG.error(message);
             throw new Exception(message);
         }
-
-        // Add optional fields
         if (columnsMap.containsKey(descriptionKey) && columnsMap.get(descriptionKey).hasStringValue()) {
             eventBuilder.setDescription(columnsMap.get(descriptionKey).getStringValue());
+        } else {
+            String message = String.format(loggingPrefix + "Could not parse field [%s].",
+                    descriptionKey);
+            LOG.error(message);
+            throw new Exception(message);
         }
+
+        // Add optional fields. If an optional field is missing, no need to take any action (usually)
         if (columnsMap.containsKey(startDateTimeKey) && columnsMap.get(startDateTimeKey).hasNumberValue()) {
-            try {
-                Optional<Long> epochMs = parseEpochMs(columnsMap.get(startDateKey).getStringValue());
-                epochMs.ifPresent(eventBuilder::setStartTime);
-            } catch (NumberFormatException e) {
-                LOG.warn(loggingPrefix + "Could not parse value [{}] from column [{}] into numeric milliseconds.",
-                        columnsMap.get(endDateKey).getStringValue(),
-                        endDateKey);
-            }
+            eventBuilder.setStartTime((long) columnsMap.get(startDateTimeKey).getNumberValue());
         }
-        if (columnsMap.containsKey(endDateKey) && columnsMap.get(endDateKey).hasStringValue()) {
-            try {
-                Optional<Long> epochMs = parseEpochMs(columnsMap.get(endDateKey).getStringValue());
-                epochMs.ifPresent(eventBuilder::setEndTime);
-            } catch (NumberFormatException e) {
-                LOG.warn(loggingPrefix + "Could not parse value [{}] from column [{}] into numeric milliseconds.",
-                        columnsMap.get(endDateKey).getStringValue(),
-                        endDateKey);
-            }
+        if (columnsMap.containsKey(endDataTimeKey) && columnsMap.get(endDataTimeKey).hasNumberValue()) {
+            eventBuilder.setEndTime((long) columnsMap.get(endDataTimeKey).getNumberValue());
         }
 
         // Add fixed values
@@ -245,12 +243,26 @@ public class RawToClean {
         metadata.put("dataSource",
                 String.format("CDF Raw: %s.%s.%s", row.getDbName(), row.getTableName(), row.getKey()));
 
+        // Don't forget to add the metadata to the event object
+        eventBuilder.putAllMetadata(metadata);
+
+        /*
+        Contextualization.
+        - Do a pure name-based, exact match asset lookup.
+         */
+        if (columnsMap.containsKey(assetReferenceKey)
+                && columnsMap.get(assetReferenceKey).hasStringValue()
+                && getAssetLookupMap().containsKey(columnsMap.get(assetReferenceKey).getStringValue())) {
+            eventBuilder.addAssetIds(getAssetLookupMap().get(columnsMap.get(assetReferenceKey).getStringValue()));
+            noElementsContextualizedGauge.inc();
+        } else {
+            LOG.warn(loggingPrefix + "Not able to link event to asset. Source input for column {}: {}",
+                    assetReferenceKey,
+                    columnsMap.getOrDefault(assetReferenceKey, Values.of("null")));
+        }
+
         // Build the event object
-        return Event.newBuilder()
-                .setExternalId(row.getTableName() + row.getKey())
-                .setDescription(row.getColumns().getFieldsOrThrow("my-mandatory-field").getStringValue())
-                .putAllMetadata(metadata)
-                .build();
+        return eventBuilder.build();
     }
 
     /*
@@ -281,6 +293,46 @@ public class RawToClean {
         }
 
         return dataSetIntId;
+    }
+
+    /*
+    Return the asset lookup map. The lookup map is used for linking the events to assets. In this example, the
+    lookup key is the asset name.
+     */
+    private Map<String, Long> getAssetLookupMap() throws Exception {
+        if (null == assetLookupMap) {
+            LOG.info("Start reading the assets from CDF...");
+            assetLookupMap = readAssets().stream()
+                    .collect(Collectors.toMap(Asset::getName, Asset::getId));
+
+            LOG.info("Finished reading {} assets from CDF.",
+                    assetLookupMap.size());
+        }
+
+        return assetLookupMap;
+    }
+
+    /*
+    Read the assets collection and minimize the asset objects.
+     */
+    private List<Asset> readAssets() throws Exception {
+        List<Asset> assetResults = new ArrayList<>();
+
+        // Read all assets. The SDK client gives you an iterator back
+        // that lets you "stream" batches of results.
+        Iterator<List<Asset>> resultsIterator = getCogniteClient().assets().list();
+
+        // Read the asset results, one batch at a time.
+        resultsIterator.forEachRemaining(assets -> {
+            for (Asset asset : assets) {
+                // we break out the results batch and process each individual result.
+                // In this case we want minimize the size of the asset collection
+                // by removing the metadata bucket (we don't need all that metadata for contextualization).
+                assetResults.add(asset.toBuilder().clearMetadata().build());
+            }
+        });
+
+        return assetResults;
     }
 
     /*

@@ -12,6 +12,12 @@ spec:
         ports:
         - containerPort: 9090
         env:
+          - name: COGNITE_CLIENTSECRET              # The client secret (OIDC auth) will be read from a K8s secret
+            valueFrom:                              # and projected to this env variable
+              secretKeyRef:
+                name: cdf-dev-credentials
+                key: clientSecret
+                optional: true
         volumeMounts:
             - mountPath: "/config"                  # The file path used by SmallRye to search for config files.
               name: config                          # Name of the "volume" to mount. Specified below in the volumes section.

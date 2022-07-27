@@ -2,9 +2,7 @@ package com.cognite.sa.transform;
 
 import com.cognite.client.CogniteClient;
 import com.cognite.client.Request;
-import com.cognite.client.config.ClientConfig;
 import com.cognite.client.config.TokenUrl;
-import com.cognite.client.config.UpsertMode;
 import com.cognite.client.dto.Asset;
 import com.cognite.client.dto.Event;
 import com.cognite.client.dto.RawRow;
