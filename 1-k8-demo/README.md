@@ -11,8 +11,7 @@ This module illustrates the following capabilities:
 
 ## Quickstart
 
-You can run this module in several ways: 1) locally as a Java application, 2) locally as a container on K8s, 
-3) on a remote K8s cluster. All options allow you to both run but also enjoy a full debugging developer experience.
+You can run this module in several ways: 1) locally as a Java application, 2) locally as a container on K8s, 3) on a remote K8s cluster. All options allow you to both run but also enjoy a full debugging developer experience.
 
 ### Run as a local Java application
 

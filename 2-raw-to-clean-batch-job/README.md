@@ -1,7 +1,60 @@
 ## Batch job example: Raw to clean transform
 
-This example illustrates how to implement a batch job and package it as a container. All job parameters are
-configured via environment variables. 
+This example illustrates how to implement a Cognite Data Fusion "raw to clean" batch data pipeline and package it as a container. It uses the practices of logging, monitoring, configuration presented in [1-k8-demo](../1-k8-demo/README.md).
 
-The job needs an external scheduler to control its execution. You can use K8's own scheduler, or an orchestration
-tool like Airflow (https://airflow.apache.org) or Argo (https://argoproj.github.io/projects/argo).
+. 
+
+
+```mermaid
+flowchart LR
+    A[(Raw)] -->|read| B(Data Pipeline)
+    subgraph CDF.clean
+        C[Event]
+        D[Asset]
+    end
+    B -->|write| C
+    D -->|read| B
+```
+
+## Quickstart
+
+You can run this module in several ways: 1) locally as a Java application, 2) locally as a container on K8s, 3) on a remote K8s cluster. All options allow you to both run but also enjoy a full debugging developer experience.
+
+### Run as a local Java application
+
+The minimum requirements for running the module locally:
+- Java 11 SDK
+- Maven
+
+On Linux/MaxOS:
+```console
+$ mvn compile exec:java -Dexec.mainClass="com.cognite.examples.RawToClean"
+```
+
+On Windows Powershell:
+```ps
+> mvn compile exec:java -D exec.mainClass="com.cognite.examples.RawToClean"
+```
+
+### Run as a container on Kubernetes
+
+Minimum requirements for running the module on K8s:
+- Java 11 SDK: [https://adoptium.net/](https://adoptium.net/)
+- Maven: [https://maven.apache.org/download.cgi](https://maven.apache.org/download.cgi)
+- Skaffold: [https://github.com/GoogleContainerTools/skaffold/releases](https://github.com/GoogleContainerTools/skaffold/releases)
+- Local K8s with kubectl
+
+Make sure your kube context points to the K8s cluster that you want to run the container on. For example, if you
+have Docker desktop installed, you should see something like the following:
+```console
+$ kubectl config current-context
+docker-desktop
+```
+
+Then you can build and deploy the container using Skaffold's `dev` mode:
+```console
+$ skaffold dev
+```
+This will compile the code, build the container locally and deploy it as a `job` on your local K8s cluster. By using
+`skaffold dev` you also get automatic log tailing so the container logs will be output to your console. When the
+container job finishes, you can press `ctrl + c` and all resources will be cleaned up.
