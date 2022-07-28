@@ -22,20 +22,20 @@ The minimum requirements for running the module locally:
 
 On Linux/MaxOS:
 ```console
-$ mvn compile exec:java -Dexec.mainClass="com.cognite.sa.Demo"
+$ mvn compile exec:java -Dexec.mainClass="com.cognite.examples.Demo"
 ```
 
 On Windows Powershell:
 ```ps
-> mvn compile exec:java -D exec.mainClass="com.cognite.sa.Demo"
+> mvn compile exec:java -D exec.mainClass="com.cognite.examples.Demo"
 ```
 
 ### Run as a container on Kubernetes
 
 Minimum requirements for running the module on K8s:
-- Java 11 SDK
-- Maven
-- Skaffold
+- Java 11 SDK: [https://adoptium.net/](https://adoptium.net/)
+- Maven: [https://maven.apache.org/download.cgi](https://maven.apache.org/download.cgi)
+- Skaffold: [https://github.com/GoogleContainerTools/skaffold/releases](https://github.com/GoogleContainerTools/skaffold/releases)
 - Local K8s with kubectl
 
 Make sure your kube context points to the K8s cluster that you want to run the container on. For example, if you 

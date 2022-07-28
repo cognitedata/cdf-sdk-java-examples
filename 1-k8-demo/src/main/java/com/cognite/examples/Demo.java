@@ -1,4 +1,4 @@
-package com.cognite.sa;
+package com.cognite.examples;
 
 import io.prometheus.client.CollectorRegistry;
 import io.prometheus.client.Gauge;
