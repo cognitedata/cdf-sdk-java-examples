@@ -92,17 +92,21 @@ public class Demo {
     /*
     Push the current metrics to the push gateway.
      */
-    private static void pushMetrics() {
+    private static boolean pushMetrics() {
+        boolean isSuccess = false;
         if (pushGatewayUrl.isPresent()) {
             try {
                 LOG.info("Pushing metrics to {}", pushGatewayUrl);
                 PushGateway pg = new PushGateway(new URL(pushGatewayUrl.get())); //9091
                 pg.pushAdd(collectorRegistry, metricsJobName);
+                isSuccess = true;
             } catch (Exception e) {
                 LOG.warn("Error when trying to push metrics: {}", e.toString());
             }
         } else {
             LOG.warn("No metrics push gateway configured. Cannot push the metrics.");
         }
+
+        return isSuccess;
     }
 }
