@@ -50,27 +50,13 @@ public class Demo {
     The entry point of the code. It executes the main logic and push job metrics upon completion.
      */
     public static void main(String[] args) {
-        boolean executionError = false;
         try {
             // Execute the main logic
             new Demo().run();
 
-            // The job completion metric is only added to the registry after job success,
-            // so that a previous success in the Pushgateway isn't overwritten on failure.
-            Gauge jobCompletionTimeStamp = Gauge.build()
-                    .name("job_completion_timestamp").help("Job completion time stamp").register(collectorRegistry);
-            jobCompletionTimeStamp.setToCurrentTime();
         } catch (Exception e) {
             LOG.error("Unrecoverable error. Will exit. {}", e.toString());
-            errorGauge.inc();
-            executionError = true;
-        } finally {
-            if (enableMetrics) {
-                pushMetrics();
-            }
-            if (executionError) {
-                System.exit(1); // container exit code for execution errors, etc.
-            }
+            System.exit(1); // container exit code for execution errors, etc.
         }
     }
 
@@ -82,11 +68,26 @@ public class Demo {
         Gauge.Timer jobDurationTimer = jobDurationSeconds.startTimer();
         jobStartTimeStamp.setToCurrentTime();
 
-        LOG.info("Starting some work...");
-        Thread.sleep(3000);
+        try {
+            LOG.info("Starting some work...");
+            Thread.sleep(3000);
 
-        LOG.info("Finished work");
-        jobDurationTimer.setDuration();
+            LOG.info("Finished work");
+            jobDurationTimer.setDuration();
+
+            // The job completion metric is only added to the registry after job success,
+            // so that a previous success in the Pushgateway isn't overwritten on failure.
+            Gauge jobCompletionTimeStamp = Gauge.build()
+                    .name("job_completion_timestamp").help("Job completion time stamp").register(collectorRegistry);
+            jobCompletionTimeStamp.setToCurrentTime();
+        } catch (Exception e) {
+            errorGauge.inc();
+            throw e;
+        } finally {
+            if (enableMetrics) {
+                pushMetrics();
+            }
+        }
     }
 
     /*

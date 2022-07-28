@@ -1,9 +1,14 @@
-## Batch job example: Raw to clean transform
+## Batch job example: Raw to clean data pipeline
 
 This example illustrates how to implement a Cognite Data Fusion "raw to clean" batch data pipeline and package it as a container. It uses the practices of logging, monitoring, configuration presented in [1-k8-demo](../1-k8-demo/README.md).
 
-. 
-
+The data pipeline performs the following tasks:
+1) Read the main input from a `CDF.Raw` table.
+2) Parse the data input to the `CDF Event` type.
+3) Read `CDF Assets` for contextualization lookup.
+4) Link the events to assets.
+5) Write the result to `CDF Events`.
+6) Report status to `extraction pipelines`.
 
 ```mermaid
 flowchart LR
@@ -15,6 +20,8 @@ flowchart LR
     B -->|write| C
     D -->|read| B
 ```
+
+
 
 ## Quickstart
 

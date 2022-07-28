@@ -96,27 +96,13 @@ public class RawToClean {
     The entry point of the code. It executes the main logic and push job metrics upon completion.
      */
     public static void main(String[] args) {
-        boolean executionError = false;
         try {
             // Execute the main logic
             new RawToClean().run();
 
-            // The job completion metric is only added to the registry after job success,
-            // so that a previous success in the Pushgateway isn't overwritten on failure.
-            Gauge jobCompletionTimeStamp = Gauge.build()
-                    .name("job_completion_timestamp").help("Job completion time stamp").register(collectorRegistry);
-            jobCompletionTimeStamp.setToCurrentTime();
         } catch (Exception e) {
             LOG.error("Unrecoverable error. Will exit. {}", e.toString());
-            errorGauge.inc();
-            executionError = true;
-        } finally {
-            if (enableMetrics) {
-                pushMetrics();
-            }
-            if (executionError) {
-                System.exit(1); // container exit code for execution errors, etc.
-            }
+            System.exit(1); // container exit code for execution errors, etc.
         }
     }
 
@@ -135,31 +121,57 @@ public class RawToClean {
         LOG.info("Starting to read the raw table {}.{}.",
                 rawDb,
                 rawTable);
-        Iterator<List<RawRow>> rawIterator = getCogniteClient().raw().rows().list(rawDb, rawTable);
+        try {
+            Iterator<List<RawRow>> rawIterator = getCogniteClient().raw().rows().list(rawDb, rawTable);
 
-        // Iterate through all rows in batches and write to clean. This will effectively "stream" through
-        // the data so that we have constant memory usage no matter how large the data set is.
-        while (rawIterator.hasNext()) {
-            List<Event> events = new ArrayList<>();
-            for (RawRow row : rawIterator.next()) {
-                Event event = parseRawRowToEvent(row);
-                if (getDataSetIntId().isPresent()) {
-                    event = event.toBuilder()
-                            .setDataSetId(dataSetIntId.getAsLong())
-                            .build();
+            // Iterate through all rows in batches and write to clean. This will effectively "stream" through
+            // the data so that we have constant memory usage no matter how large the data set is.
+            while (rawIterator.hasNext()) {
+                List<Event> events = new ArrayList<>();
+                for (RawRow row : rawIterator.next()) {
+                    Event event = parseRawRowToEvent(row);
+                    if (getDataSetIntId().isPresent()) {
+                        event = event.toBuilder()
+                                .setDataSetId(dataSetIntId.getAsLong())
+                                .build();
+                    }
+
+                    events.add(event);
                 }
 
-                events.add(event);
+                getCogniteClient().events().upsert(events);
+                noElementsGauge.inc(events.size());
             }
 
-            getCogniteClient().events().upsert(events);
-            noElementsGauge.inc(events.size());
-        }
+            LOG.info("Finished processing {} rows from raw. Duration {}",
+                    noElementsGauge.get(),
+                    Duration.between(startInstant, Instant.now()));
+            jobDurationTimer.setDuration();
 
-        LOG.info("Finished processing {} rows from raw. Duration {}",
-                noElementsGauge.get(),
-                Duration.between(startInstant, Instant.now()));
-        jobDurationTimer.setDuration();
+            // The job completion metric is only added to the registry after job success,
+            // so that a previous success in the Pushgateway isn't overwritten on failure.
+            Gauge jobCompletionTimeStamp = Gauge.build()
+                    .name("job_completion_timestamp").help("Job completion time stamp").register(collectorRegistry);
+            jobCompletionTimeStamp.setToCurrentTime();
+
+            if (extractionPipelineExtId.isPresent()) {
+                writeExtractionPipelineRun(ExtractionPipelineRun.Status.SUCCESS,
+                        String.format("Upserted %d events to CDF. %d events could be linked to assets.",
+                                noElementsGauge.get(),
+                                noElementsContextualizedGauge.get()));
+            }
+        } catch (Exception e) {
+            errorGauge.inc();
+            if (extractionPipelineExtId.isPresent()) {
+                writeExtractionPipelineRun(ExtractionPipelineRun.Status.FAILURE,
+                        String.format("Job failed: %s", e.getMessage()));
+            }
+            throw e;
+        } finally {
+            if (enableMetrics) {
+                pushMetrics();
+            }
+        }
     }
 
     /*
@@ -273,7 +285,7 @@ public class RawToClean {
      */
     private OptionalLong getDataSetIntId() throws Exception {
         if (null == dataSetIntId) {
-            if (dataSetIntId.isPresent()) {
+            if (targetDataSetExtId.isPresent()) {
                 // Get the data set id
                 LOG.info("Looking up the data set external id: {}.",
                         targetDataSetExtId.get());
@@ -369,19 +381,50 @@ public class RawToClean {
     }
 
     /*
+    Creates an extraction pipeline run and writes it to Cognite Data Fusion.
+     */
+    private boolean writeExtractionPipelineRun(ExtractionPipelineRun.Status status, String message) {
+        boolean writeSuccess = false;
+        if (extractionPipelineExtId.isPresent()) {
+            try {
+                ExtractionPipelineRun pipelineRun = ExtractionPipelineRun.newBuilder()
+                            .setExternalId(extractionPipelineExtId.get())
+                            .setCreatedTime(Instant.now().toEpochMilli())
+                            .setStatus(status)
+                            .setMessage(message)
+                            .build();
+
+                LOG.info("Writing extraction pipeline run with status: {}", pipelineRun);
+                getCogniteClient().extractionPipelines().runs().create(List.of(pipelineRun));
+                writeSuccess = true;
+            } catch (Exception e) {
+                LOG.warn("Error when trying to create extraction pipeline run: {}", e.toString());
+            }
+        } else {
+            LOG.warn("Extraction pipeline external id is not configured. Cannot create pipeline run.");
+        }
+
+        return writeSuccess;
+    }
+
+    /*
     Push the current metrics to the push gateway.
      */
-    private static void pushMetrics() {
+    private static boolean pushMetrics() {
+        boolean isSuccess = false;
         if (pushGatewayUrl.isPresent()) {
             try {
                 LOG.info("Pushing metrics to {}", pushGatewayUrl);
                 PushGateway pg = new PushGateway(new URL(pushGatewayUrl.get())); //9091
                 pg.pushAdd(collectorRegistry, metricsJobName);
+                isSuccess = true;
             } catch (Exception e) {
                 LOG.warn("Error when trying to push metrics: {}", e.toString());
             }
         } else {
             LOG.warn("No metrics push gateway configured. Cannot push the metrics.");
         }
+
+        return isSuccess;
     }
 }
