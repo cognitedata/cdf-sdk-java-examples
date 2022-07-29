@@ -1,0 +1,9 @@
+# Custom configuration options should be added to this file. It will be mapped into the
+# application pod and made available to the container as /config/config.yaml
+
+# Configuration for metrics.
+metrics:
+  enable: false
+  jobName: "my-k8-demo"
+  pushGateway:
+    url: "http://prometheus-pushgateway.victoria-metrics:9091"

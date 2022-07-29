@@ -1,0 +1,20 @@
+# Add support for reading an external config file
+smallrye:
+  config:
+    locations: "/config/config.yaml"
+
+# Default config settings
+cdf:
+  authentication:
+    apiKey:
+    apiKeyGcp: ""
+
+source:
+  rawDb: "sap-extract"
+  table: "notification"
+
+metrics:
+  enable: false
+  jobName: "http extractor"
+  pushGateway:
+    url: "http://internal-prometheus-pushgateway.internal-services:9091"

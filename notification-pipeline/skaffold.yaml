@@ -1,0 +1,17 @@
+apiVersion: skaffold/v2beta29
+kind: Config
+metadata:
+  name: notification-pipeline
+build:
+  artifacts:
+  - image: notification-pipeline
+    context: .
+    jib:
+      project: com.cognite:notification-pipeline
+  tagPolicy:
+    sha256: {}
+deploy:
+  kubectl:
+    manifests:
+    - kubernetes-manifests/notification-pipeline.configmap.yaml
+    - kubernetes-manifests/notification-pipeline.cronjob.yaml

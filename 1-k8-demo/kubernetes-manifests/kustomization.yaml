@@ -1,0 +1,19 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+#namespace: default
+commonLabels:
+  app.kubernetes.io/name: k8-demo
+  app: k8-demo
+resources:
+  - k8-demo.job.yaml
+
+# The generator will convert the config.yaml file into a K8 config map which can be mapped
+# into the container
+configMapGenerator:
+  - name: k8-demo-config
+    files:
+      - config.yaml=config.yaml
+
+generatorOptions:
+  disableNameSuffixHash: true

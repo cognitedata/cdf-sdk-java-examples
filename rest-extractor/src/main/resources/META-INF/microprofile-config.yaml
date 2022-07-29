@@ -1,0 +1,33 @@
+# Add support for reading an external config file
+smallrye:
+  config:
+    locations: "/config/config.yaml"
+
+# The http source configuration
+source:
+  uri: "https://fiori.s5consulting.no/sap/opu/odata/sap/ZODATA_FUNCTIONALLOCATION_SRV/FunctionalLocationSet?$format=json"
+  method: "GET"
+  body: ""
+  authentication:
+    protocol: "basic"
+    id: "ext_cognite"
+    secret:
+    secretGcp: ""
+
+response:
+  format: "json"
+  path: "d.results"
+  rowKey: ["Mandt", "Functionallocation"]
+
+target:
+  rawDb: "sap-extract"
+  rawTable: "functional-location"
+  authentication:
+    apiKey:
+    apiKeyGcp: ""
+
+metrics:
+  enable: false
+  jobName: "http extractor"
+  pushGateway:
+    url: "http://internal-prometheus-pushgateway.internal-services:9091"

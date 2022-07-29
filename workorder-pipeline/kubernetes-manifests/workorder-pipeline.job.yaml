@@ -1,0 +1,42 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: workorder-pipeline
+spec:
+  ttlSecondsAfterFinished: 100
+  template:
+    spec:
+      containers:
+      - name: workorder-pipeline
+        image: workorder-pipeline
+        ports:
+        - containerPort: 9090
+        env:
+          - name: cdf_authentication_apiKey
+            valueFrom:
+              secretKeyRef:
+                name: sap-internal
+                key: cdfTransformKey
+          - name: PORT
+            value: "9090"
+          # This environment variable enables debugging support for the container.
+          # Remove this to disable the debug build.
+          #- name: JAVA_TOOL_OPTIONS
+          #  value: -agentlib:jdwp=transport=dt_socket,server=y,address=5005,suspend=n,quiet=y
+        volumeMounts:
+          - mountPath: "/config"
+            name: config
+            readOnly: true
+        resources:
+          requests:
+            memory: "1024Mi"
+            cpu: "1000m"
+          limits:
+            memory: "2048Mi"
+            cpu: "2000m"
+      volumes:
+        - name: config
+          configMap:
+            name: workorder-pipeline-config
+      restartPolicy: Never
+      #serviceAccountName: transform-default

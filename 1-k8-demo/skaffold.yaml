@@ -1,0 +1,29 @@
+apiVersion: skaffold/v2beta29
+kind: Config
+metadata:
+  name: k8-demo
+build:
+  local:
+    push: false                                            # When building locally, do not push the image to a repository
+  artifacts:
+  - image: k8-demo                                         # Image name
+    context: .
+    jib:                                                   # Use Jib as the container builder
+      fromImage: "gcr.io/distroless/java11-debian11"       # Use a "distroless" base image
+  tagPolicy:
+    dateTime:                                              # The image will be tagged with the build timestamp
+      format: "20060102T150405"
+      timezone: "UTC"
+deploy:
+  kustomize:
+    paths:
+      - ./kubernetes-manifests/
+profiles:
+  - name: ci
+    build:
+      local:
+        push: true
+    patches:
+      - op: replace
+        path: /build/artifacts/0/image
+        value: your-image-registry/k8-demo  # add your image registry as prefix here

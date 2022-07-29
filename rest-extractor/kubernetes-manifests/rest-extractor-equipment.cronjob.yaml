@@ -1,0 +1,50 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: rest-extractor-equipment
+spec:
+  schedule: "50 * * * *"
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: extractor
+            image: rest-extractor
+            ports:
+            - containerPort: 9090
+            env:
+              - name: target_authentication_apiKey
+                valueFrom:
+                  secretKeyRef:
+                    name: sap-internal
+                    key: cdfExtractKey
+              - name: source_authentication_secret
+                valueFrom:
+                  secretKeyRef:
+                    name: sap-internal
+                    key: sapSecret
+              - name: PORT
+                value: "9090"
+              # This environment variable enables debugging support for the container.
+              # Remove this to disable the debug build.
+              #- name: JAVA_TOOL_OPTIONS
+              #  value: -agentlib:jdwp=transport=dt_socket,server=y,address=5005,suspend=n,quiet=y
+            volumeMounts:
+              - mountPath: "/config"
+                name: config
+                readOnly: true
+            resources:
+              requests:
+                memory: "256Mi"
+                cpu: "500m"
+              limits:
+                memory: "512Mi"
+                cpu: "1000m"
+          volumes:
+            - name: config
+              configMap:
+                name: rest-extractor-equipment-config
+          restartPolicy: Never
+          #serviceAccountName: extractor-default
