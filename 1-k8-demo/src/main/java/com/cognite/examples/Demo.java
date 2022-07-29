@@ -55,11 +55,6 @@ public class Demo {
             // Execute the main logic
             run();
 
-            // The job completion metric is only added to the registry after job success,
-            // so that a previous success in the Pushgateway isn't overwritten on failure.
-            Gauge jobCompletionTimeStamp = Gauge.build()
-                    .name("job_completion_timestamp").help("Job completion time stamp").register(collectorRegistry);
-            jobCompletionTimeStamp.setToCurrentTime();
         } catch (Exception e) {
             LOG.error("Unrecoverable error. Will exit. {}", e.toString());
             errorGauge.inc();
@@ -87,6 +82,12 @@ public class Demo {
 
         LOG.info("Finished work");
         jobDurationTimer.setDuration();
+
+        // The job completion metric is only added to the registry after job success,
+        // so that a previous success in the Pushgateway isn't overwritten on failure.
+        Gauge jobCompletionTimeStamp = Gauge.build()
+                .name("job_completion_timestamp").help("Job completion time stamp").register(collectorRegistry);
+        jobCompletionTimeStamp.setToCurrentTime();
     }
 
     /*

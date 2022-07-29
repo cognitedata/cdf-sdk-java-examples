@@ -101,12 +101,6 @@ public class RawToClean {
             // Execute the main logic
             run();
 
-            // The job completion metric is only added to the registry after job success,
-            // so that a previous success in the Pushgateway isn't overwritten on failure.
-            Gauge jobCompletionTimeStamp = Gauge.build()
-                    .name("job_completion_timestamp").help("Job completion time stamp").register(collectorRegistry);
-            jobCompletionTimeStamp.setToCurrentTime();
-
             if (extractionPipelineExtId.isPresent()) {
                 writeExtractionPipelineRun(ExtractionPipelineRun.Status.SUCCESS,
                         String.format("Upserted %d events to CDF. %d events could be linked to assets.",
@@ -170,6 +164,12 @@ public class RawToClean {
                 noElementsGauge.get(),
                 Duration.between(startInstant, Instant.now()));
         jobDurationTimer.setDuration();
+
+        // The job completion metric is only added to the registry after job success,
+        // so that a previous success in the Pushgateway isn't overwritten on failure.
+        Gauge jobCompletionTimeStamp = Gauge.build()
+                .name("job_completion_timestamp").help("Job completion time stamp").register(collectorRegistry);
+        jobCompletionTimeStamp.setToCurrentTime();
     }
 
     /*
