@@ -139,23 +139,21 @@ public class RawToClean {
         LOG.info("Starting to read the raw table {}.{}.",
                 rawDb,
                 rawTable);
-        Iterator<List<RawRow>> rawIterator = getCogniteClient().raw().rows().list(rawDb, rawTable);
+        Iterator<List<RawRow>> rawResultsIterator = getCogniteClient().raw().rows().list(rawDb, rawTable);
 
         // Iterate through all rows in batches and write to clean. This will effectively "stream" through
-        // the data so that we have constant memory usage no matter how large the data set is.
-        while (rawIterator.hasNext()) {
+        // the data so that we have ~constant memory usage no matter how large the data set is.
+        while (rawResultsIterator.hasNext()) {
+            // Temporary collection for hosting a single batch of parsed events.
             List<Event> events = new ArrayList<>();
-            for (RawRow row : rawIterator.next()) {
-                Event event = parseRawRowToEvent(row);
-                if (getDataSetIntId().isPresent()) {
-                    event = event.toBuilder()
-                            .setDataSetId(dataSetIntId.getAsLong())
-                            .build();
-                }
 
+            // Iterate through the individual rows in a single results batch and parse them to events.
+            for (RawRow row : rawResultsIterator.next()) {
+                Event event = parseRawRowToEvent(row);
                 events.add(event);
             }
 
+            // Upsert a batch of results to CDF
             getCogniteClient().events().upsert(events);
             noElementsGauge.inc(events.size());
         }
@@ -243,7 +241,7 @@ public class RawToClean {
                 .setType(typeValue)
                 .setSubtype(subtypeValue);
 
-        // Add fields to metadata based on the exclude filters
+        // Add fields to metadata based on the exclusion filters
         Map<String, String> metadata = columnsMap.entrySet().stream()
                 .filter(entry -> !entry.getKey().startsWith(excludeColumnPrefix))
                 .filter(entry -> !excludeColumns.contains(entry.getKey()))
@@ -256,9 +254,15 @@ public class RawToClean {
         // Don't forget to add the metadata to the event object
         eventBuilder.putAllMetadata(metadata);
 
+        // If a target dataset has been configured, add it to the event object
+        if (getDataSetIntId().isPresent()) {
+            eventBuilder.setDataSetId(dataSetIntId.getAsLong());
+        }
+
         /*
         Contextualization.
         - Do a pure name-based, exact match asset lookup.
+        - Log a successful contextualization operation as a metric.
          */
         if (columnsMap.containsKey(assetReferenceKey)
                 && columnsMap.get(assetReferenceKey).hasStringValue()
