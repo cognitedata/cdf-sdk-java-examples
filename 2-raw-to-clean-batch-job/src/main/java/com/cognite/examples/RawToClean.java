@@ -88,65 +88,18 @@ public class RawToClean {
             .name("job_no_elements_contextualized").help("Number of contextualized elements").register(collectorRegistry);
 
     // global data structures
-    private CogniteClient cogniteClient;
-    private OptionalLong dataSetIntId;
-    private Map<String, Long> assetLookupMap;
+    private static CogniteClient cogniteClient;
+    private static OptionalLong dataSetIntId;
+    private static Map<String, Long> assetLookupMap;
 
     /*
     The entry point of the code. It executes the main logic and push job metrics upon completion.
      */
     public static void main(String[] args) {
+        boolean jobFailed = false;
         try {
             // Execute the main logic
-            new RawToClean().run();
-
-        } catch (Exception e) {
-            LOG.error("Unrecoverable error. Will exit. {}", e.toString());
-            System.exit(1); // container exit code for execution errors, etc.
-        }
-    }
-
-    /*
-    The main logic to execute.
-     */
-    private void run() throws Exception {
-        Instant startInstant = Instant.now();
-        LOG.info("Starting raw to clean pipeline...");
-
-        // Prepare the job start metrics
-        Gauge.Timer jobDurationTimer = jobDurationSeconds.startTimer();
-        jobStartTimeStamp.setToCurrentTime();
-
-        // Set up the reader for the raw table
-        LOG.info("Starting to read the raw table {}.{}.",
-                rawDb,
-                rawTable);
-        try {
-            Iterator<List<RawRow>> rawIterator = getCogniteClient().raw().rows().list(rawDb, rawTable);
-
-            // Iterate through all rows in batches and write to clean. This will effectively "stream" through
-            // the data so that we have constant memory usage no matter how large the data set is.
-            while (rawIterator.hasNext()) {
-                List<Event> events = new ArrayList<>();
-                for (RawRow row : rawIterator.next()) {
-                    Event event = parseRawRowToEvent(row);
-                    if (getDataSetIntId().isPresent()) {
-                        event = event.toBuilder()
-                                .setDataSetId(dataSetIntId.getAsLong())
-                                .build();
-                    }
-
-                    events.add(event);
-                }
-
-                getCogniteClient().events().upsert(events);
-                noElementsGauge.inc(events.size());
-            }
-
-            LOG.info("Finished processing {} rows from raw. Duration {}",
-                    noElementsGauge.get(),
-                    Duration.between(startInstant, Instant.now()));
-            jobDurationTimer.setDuration();
+            run();
 
             // The job completion metric is only added to the registry after job success,
             // so that a previous success in the Pushgateway isn't overwritten on failure.
@@ -161,24 +114,69 @@ public class RawToClean {
                                 noElementsContextualizedGauge.get()));
             }
         } catch (Exception e) {
+            LOG.error("Unrecoverable error. Will exit. {}", e.toString());
             errorGauge.inc();
             if (extractionPipelineExtId.isPresent()) {
                 writeExtractionPipelineRun(ExtractionPipelineRun.Status.FAILURE,
                         String.format("Job failed: %s", e.getMessage()));
             }
-            throw e;
         } finally {
             if (enableMetrics) {
                 pushMetrics();
             }
+            if (jobFailed) {
+                System.exit(1); // container exit code for execution errors, etc.
+            }
         }
+    }
+
+    /*
+    The main logic to execute.
+     */
+    private static void run() throws Exception {
+        Instant startInstant = Instant.now();
+        LOG.info("Starting raw to clean pipeline...");
+
+        // Prepare the job start metrics
+        Gauge.Timer jobDurationTimer = jobDurationSeconds.startTimer();
+        jobStartTimeStamp.setToCurrentTime();
+
+        // Set up the reader for the raw table
+        LOG.info("Starting to read the raw table {}.{}.",
+                rawDb,
+                rawTable);
+        Iterator<List<RawRow>> rawIterator = getCogniteClient().raw().rows().list(rawDb, rawTable);
+
+        // Iterate through all rows in batches and write to clean. This will effectively "stream" through
+        // the data so that we have constant memory usage no matter how large the data set is.
+        while (rawIterator.hasNext()) {
+            List<Event> events = new ArrayList<>();
+            for (RawRow row : rawIterator.next()) {
+                Event event = parseRawRowToEvent(row);
+                if (getDataSetIntId().isPresent()) {
+                    event = event.toBuilder()
+                            .setDataSetId(dataSetIntId.getAsLong())
+                            .build();
+                }
+
+                events.add(event);
+            }
+
+            getCogniteClient().events().upsert(events);
+            noElementsGauge.inc(events.size());
+        }
+
+        LOG.info("Finished processing {} rows from raw. Duration {}",
+                noElementsGauge.get(),
+                Duration.between(startInstant, Instant.now()));
+        jobDurationTimer.setDuration();
     }
 
     /*
     The main logic for parsing a Raw row to the target data structure--in this case an Event. Keep the code
     structured and readable for it to be easy to evolve and maintain.
      */
-    private Event parseRawRowToEvent(RawRow row) throws Exception {
+    private static Event parseRawRowToEvent(RawRow row) throws Exception {
         final String loggingPrefix = "parseRawRowToEvent() - ";
 
         /*
@@ -283,7 +281,7 @@ public class RawToClean {
     If the data set external id has been configured, this method will translate this to the corresponding
     internal id.
      */
-    private OptionalLong getDataSetIntId() throws Exception {
+    private static OptionalLong getDataSetIntId() throws Exception {
         if (null == dataSetIntId) {
             if (targetDataSetExtId.isPresent()) {
                 // Get the data set id
@@ -311,7 +309,7 @@ public class RawToClean {
     Return the asset lookup map. The lookup map is used for linking the events to assets. In this example, the
     lookup key is the asset name.
      */
-    private Map<String, Long> getAssetLookupMap() throws Exception {
+    private static Map<String, Long> getAssetLookupMap() throws Exception {
         if (null == assetLookupMap) {
             LOG.info("Start reading the assets from CDF...");
             assetLookupMap = readAssets().stream()
@@ -327,7 +325,7 @@ public class RawToClean {
     /*
     Read the assets collection and minimize the asset objects.
      */
-    private List<Asset> readAssets() throws Exception {
+    private static List<Asset> readAssets() throws Exception {
         List<Asset> assetResults = new ArrayList<>();
 
         // Read all assets. The SDK client gives you an iterator back
@@ -338,7 +336,7 @@ public class RawToClean {
         resultsIterator.forEachRemaining(assets -> {
             for (Asset asset : assets) {
                 // we break out the results batch and process each individual result.
-                // In this case we want minimize the size of the asset collection
+                // In this case we want to minimize the size of the asset collection
                 // by removing the metadata bucket (we don't need all that metadata for contextualization).
                 assetResults.add(asset.toBuilder().clearMetadata().build());
             }
@@ -353,7 +351,7 @@ public class RawToClean {
     If the client isn't instantiated, it will be created according to the configured authentication options. After the
     initial instantiation, the client will be cached and reused.
      */
-    private CogniteClient getCogniteClient() throws Exception {
+    private static CogniteClient getCogniteClient() throws Exception {
         if (null == cogniteClient) {
             Preconditions.checkState(cdfProject.isPresent(),
                     "CDF project must be specified in the configuration.");
@@ -383,7 +381,7 @@ public class RawToClean {
     /*
     Creates an extraction pipeline run and writes it to Cognite Data Fusion.
      */
-    private boolean writeExtractionPipelineRun(ExtractionPipelineRun.Status status, String message) {
+    private static boolean writeExtractionPipelineRun(ExtractionPipelineRun.Status status, String message) {
         boolean writeSuccess = false;
         if (extractionPipelineExtId.isPresent()) {
             try {

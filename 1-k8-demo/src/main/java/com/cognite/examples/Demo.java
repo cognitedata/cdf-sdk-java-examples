@@ -50,30 +50,10 @@ public class Demo {
     The entry point of the code. It executes the main logic and push job metrics upon completion.
      */
     public static void main(String[] args) {
+        boolean jobFailed = false;
         try {
             // Execute the main logic
-            new Demo().run();
-
-        } catch (Exception e) {
-            LOG.error("Unrecoverable error. Will exit. {}", e.toString());
-            System.exit(1); // container exit code for execution errors, etc.
-        }
-    }
-
-    /*
-    The main logic to execute.
-     */
-    private void run() throws Exception {
-        LOG.info("Starting container...");
-        Gauge.Timer jobDurationTimer = jobDurationSeconds.startTimer();
-        jobStartTimeStamp.setToCurrentTime();
-
-        try {
-            LOG.info("Starting some work...");
-            Thread.sleep(3000);
-
-            LOG.info("Finished work");
-            jobDurationTimer.setDuration();
+            run();
 
             // The job completion metric is only added to the registry after job success,
             // so that a previous success in the Pushgateway isn't overwritten on failure.
@@ -81,13 +61,32 @@ public class Demo {
                     .name("job_completion_timestamp").help("Job completion time stamp").register(collectorRegistry);
             jobCompletionTimeStamp.setToCurrentTime();
         } catch (Exception e) {
+            LOG.error("Unrecoverable error. Will exit. {}", e.toString());
             errorGauge.inc();
-            throw e;
+            jobFailed = true;
         } finally {
             if (enableMetrics) {
                 pushMetrics();
             }
+            if (jobFailed) {
+                System.exit(1); // container exit code for execution errors, etc.
+            }
         }
+    }
+
+    /*
+    The main logic to execute.
+     */
+    private static void run() throws Exception {
+        LOG.info("Starting container...");
+        Gauge.Timer jobDurationTimer = jobDurationSeconds.startTimer();
+        jobStartTimeStamp.setToCurrentTime();
+
+        LOG.info("Starting some work...");
+        Thread.sleep(3000);
+
+        LOG.info("Finished work");
+        jobDurationTimer.setDuration();
     }
 
     /*
