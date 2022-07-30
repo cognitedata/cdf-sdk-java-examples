@@ -1,12 +1,12 @@
 apiVersion: skaffold/v2beta29
 kind: Config
 metadata:
-  name: raw-to-clean-batch-job
+  name: beam-pipeline-example
 build:
   local:
     push: false
   artifacts:
-  - image: raw-to-clean-batch-job
+  - image: beam-pipeline-example
     context: .
     jib:
       fromImage: "gcr.io/distroless/java11-debian11"
@@ -26,4 +26,4 @@ profiles:
     patches:
       - op: replace
         path: /build/artifacts/0/image
-        value: your-image-registry/raw-to-clean-batch-job  # add your image registry as prefix here
+        value: your-image-registry/beam-pipeline-example  # add your image registry as prefix here

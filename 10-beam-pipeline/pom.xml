@@ -5,14 +5,16 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>com.cognite</groupId>
-    <artifactId>raw-to-clean-batch-job</artifactId>
+    <artifactId>beam-pipeline-example</artifactId>
     <version>1.0-SNAPSHOT</version>
 
     <properties>
         <maven.compiler.source>11</maven.compiler.source>
         <maven.compiler.target>11</maven.compiler.target>
 
-        <cdf-sdk-java.version>1.16.0</cdf-sdk-java.version>
+        <beam.version>2.40.0</beam.version>
+        <beam.connector.version>0.9.38</beam.connector.version>
+
         <slf4j-api.version>1.7.36</slf4j-api.version>
         <logback-classic.version>1.2.11</logback-classic.version>
         <smallrye.config.version>2.10.1</smallrye.config.version>
@@ -35,8 +37,25 @@
     <dependencies>
         <dependency>
             <groupId>com.cognite</groupId>
-            <artifactId>cdf-sdk-java</artifactId>
-            <version>${cdf-sdk-java.version}</version>
+            <artifactId>beam-connector-java</artifactId>
+            <version>${beam.connector.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.beam</groupId>
+            <artifactId>beam-sdks-java-core</artifactId>
+            <version>${beam.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.beam</groupId>
+            <artifactId>beam-runners-direct-java</artifactId>
+            <version>${beam.version}</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.beam</groupId>
+            <artifactId>beam-runners-google-cloud-dataflow-java</artifactId>
+            <version>${beam.version}</version>
+            <scope>compile</scope>
         </dependency>
         <dependency>
             <groupId>org.slf4j</groupId>
@@ -57,18 +76,6 @@
         <dependency>
             <groupId>io.prometheus</groupId>
             <artifactId>simpleclient</artifactId>
-            <version>${io.prometheus.version}</version>
-        </dependency>
-        <!-- Hotspot JVM metrics-->
-        <dependency>
-            <groupId>io.prometheus</groupId>
-            <artifactId>simpleclient_hotspot</artifactId>
-            <version>${io.prometheus.version}</version>
-        </dependency>
-        <!-- Exposition HTTPServer-->
-        <dependency>
-            <groupId>io.prometheus</groupId>
-            <artifactId>simpleclient_pushgateway</artifactId>
             <version>${io.prometheus.version}</version>
         </dependency>
     </dependencies>

@@ -1,0 +1,153 @@
+package com.cognite.examples;
+
+import io.prometheus.client.CollectorRegistry;
+import io.prometheus.client.Gauge;
+import org.apache.beam.sdk.Pipeline;
+import org.apache.beam.sdk.io.TextIO;
+import org.apache.beam.sdk.metrics.Counter;
+import org.apache.beam.sdk.metrics.Distribution;
+import org.apache.beam.sdk.metrics.Metrics;
+import org.apache.beam.sdk.options.PipelineOptions;
+import org.apache.beam.sdk.options.PipelineOptionsFactory;
+import org.apache.beam.sdk.transforms.*;
+import org.apache.beam.sdk.values.KV;
+import org.apache.beam.sdk.values.PCollection;
+import org.eclipse.microprofile.config.ConfigProvider;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.Optional;
+
+public class Beam {
+    private static Logger LOG = LoggerFactory.getLogger(Beam.class);
+
+    /*
+    CDF data target configuration. From config file / env variables.
+     */
+    private static final String sourceFile = ConfigProvider.getConfig().getValue("source.fileUri", String.class);
+    private static final String targetFile = ConfigProvider.getConfig().getValue("target.fileUri", String.class);
+    private static final Optional<String> targetDataSetExtId =
+            ConfigProvider.getConfig().getOptionalValue("target.dataSetExternalId", String.class);
+    private static final Optional<String> extractionPipelineExtId =
+            ConfigProvider.getConfig().getOptionalValue("target.extractionPipelineExternalId", String.class);
+
+    /*
+    Pipeline configuration
+     */
+    private static final String extIdPrefix = "source-name:";
+
+    /*
+    Metrics target configuration. From config file / env variables.
+     */
+    private static final boolean enableMetrics =
+            ConfigProvider.getConfig().getValue("metrics.enable", Boolean.class);
+    private static final String metricsJobName =
+            ConfigProvider.getConfig().getValue("metrics.jobName", String.class);
+    private static final Optional<String> pushGatewayUrl =
+            ConfigProvider.getConfig().getOptionalValue("metrics.pushGateway.url", String.class);
+
+    /*
+    Metrics section. Define the metrics to expose.
+     */
+    private static final CollectorRegistry collectorRegistry = new CollectorRegistry();
+    private static final Gauge jobDurationSeconds = Gauge.build()
+            .name("job_duration_seconds").help("Job duration in seconds").register(collectorRegistry);
+    private static final Gauge jobStartTimeStamp = Gauge.build()
+            .name("job_start_timestamp").help("Job start timestamp").register(collectorRegistry);
+    private static final Gauge errorGauge = Gauge.build()
+            .name("job_errors").help("Total job errors").register(collectorRegistry);
+    private static final Gauge noElementsGauge = Gauge.build()
+            .name("job_no_elements_processed").help("Number of processed elements").register(collectorRegistry);
+    private static final Gauge noElementsContextualizedGauge = Gauge.build()
+            .name("job_no_elements_contextualized").help("Number of contextualized elements").register(collectorRegistry);
+
+    // global data structures
+
+    /**
+     * Concept #2: You can make your pipeline assembly code less verbose by defining your DoFns
+     * statically out-of-line. This DoFn tokenizes lines of text into individual words; we pass it to
+     * a ParDo in the pipeline.
+     */
+    static class ExtractWordsFn extends DoFn<String, String> {
+        private final Counter emptyLines = Metrics.counter(ExtractWordsFn.class, "emptyLines");
+        private final Distribution lineLenDist =
+                Metrics.distribution(ExtractWordsFn.class, "lineLenDistro");
+
+        @ProcessElement
+        public void processElement(@Element String element, OutputReceiver<String> receiver) {
+            lineLenDist.update(element.length());
+            if (element.trim().isEmpty()) {
+                emptyLines.inc();
+            }
+
+            // Split the line into words.
+            String[] words = element.split(" ", 0);
+
+            // Output each word encountered into the output PCollection.
+            for (String word : words) {
+                if (!word.isEmpty()) {
+                    receiver.output(word);
+                }
+            }
+        }
+    }
+
+    /** A SimpleFunction that converts a Word and Count into a printable string. */
+    public static class FormatAsTextFn extends SimpleFunction<KV<String, Long>, String> {
+        @Override
+        public String apply(KV<String, Long> input) {
+            return input.getKey() + ": " + input.getValue();
+        }
+    }
+
+    /**
+     * A PTransform that converts a PCollection containing lines of text into a PCollection of
+     * formatted word counts.
+     *
+     * <p>Concept #3: This is a custom composite transform that bundles two transforms (ParDo and
+     * Count) as a reusable PTransform subclass. Using composite transforms allows for easy reuse,
+     * modular testing, and an improved monitoring experience.
+     */
+    public static class CountWords
+            extends PTransform<PCollection<String>, PCollection<KV<String, Long>>> {
+        @Override
+        public PCollection<KV<String, Long>> expand(PCollection<String> lines) {
+
+            // Convert lines of text into individual words.
+            PCollection<String> words = lines.apply(ParDo.of(new ExtractWordsFn()));
+
+            // Count the number of times each word occurs.
+            PCollection<KV<String, Long>> wordCounts = words.apply(Count.perElement());
+
+            return wordCounts;
+        }
+    }
+
+    /*
+    The main logic to execute.
+     */
+    static void runWordCount(PipelineOptions options) {
+        Pipeline p = Pipeline.create(options);
+
+        // Concepts #2 and #3: Our pipeline applies the composite CountWords transform, and passes the
+        // static FormatAsTextFn() to the ParDo transform.
+        p.apply("ReadLines", TextIO.read().from(sourceFile))
+                .apply(new CountWords())
+                .apply(MapElements.via(new FormatAsTextFn()))
+                .apply("WriteCounts", TextIO.write()
+                        .to(targetFile)
+                        .withoutSharding());
+
+        p.run().waitUntilFinish();
+    }
+
+    /*
+    The entry point of the code. It executes the main logic and push job metrics upon completion.
+     */
+    public static void main(String[] args) {
+        PipelineOptions options =
+                PipelineOptionsFactory.fromArgs(args).withValidation().as(PipelineOptions.class);
+
+        runWordCount(options);
+    }
+}
