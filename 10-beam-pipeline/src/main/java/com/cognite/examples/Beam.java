@@ -3,6 +3,7 @@ package com.cognite.examples;
 import io.prometheus.client.CollectorRegistry;
 import io.prometheus.client.Gauge;
 import org.apache.beam.sdk.Pipeline;
+import org.apache.beam.sdk.PipelineResult;
 import org.apache.beam.sdk.io.TextIO;
 import org.apache.beam.sdk.metrics.Counter;
 import org.apache.beam.sdk.metrics.Distribution;
@@ -12,11 +13,13 @@ import org.apache.beam.sdk.options.PipelineOptionsFactory;
 import org.apache.beam.sdk.transforms.*;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
+import org.apache.beam.sdk.values.TypeDescriptors;
 import org.eclipse.microprofile.config.ConfigProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Optional;
+import java.util.concurrent.ThreadLocalRandom;
 
 public class Beam {
     private static Logger LOG = LoggerFactory.getLogger(Beam.class);
@@ -81,7 +84,7 @@ public class Beam {
             }
 
             // Split the line into words.
-            String[] words = element.split(" ", 0);
+            String[] words = element.split("[^\\p{L}]+", 0);
 
             // Output each word encountered into the output PCollection.
             for (String word : words) {
@@ -132,13 +135,34 @@ public class Beam {
         // Concepts #2 and #3: Our pipeline applies the composite CountWords transform, and passes the
         // static FormatAsTextFn() to the ParDo transform.
         p.apply("ReadLines", TextIO.read().from(sourceFile))
+                //.apply("filter", Filter.by(element -> ThreadLocalRandom.current().nextDouble() < 0.01))
                 .apply(new CountWords())
                 .apply(MapElements.via(new FormatAsTextFn()))
+                /*
+                .apply("Log counts", MapElements.into(TypeDescriptors.strings())
+                        .via(entry -> {
+                            LOG.info("Entry: {}", entry);
+                            return entry;
+                        }))
+
+                 */
                 .apply("WriteCounts", TextIO.write()
                         .to(targetFile)
                         .withoutSharding());
 
-        p.run().waitUntilFinish();
+        PipelineResult result = p.run();
+        LOG.info("Started pipeline");
+        result.waitUntilFinish();
+
+        LOG.info("Pipeline finished with status: {}", result.getState().toString());
+        long totalMemMb = Runtime.getRuntime().totalMemory() / (1024 * 1024);
+        long freeMemMb = Runtime.getRuntime().freeMemory() / (1024 * 1024);
+        long usedMemMb = totalMemMb - freeMemMb;
+        String logMessage = String.format("----------------------- memory stats --------------------- %n"
+                + "Total memory: %d MB %n"
+                + "Used memory: %d MB %n"
+                + "Free memory: %d MB", totalMemMb, usedMemMb, freeMemMb);
+        LOG.info(logMessage);
     }
 
     /*

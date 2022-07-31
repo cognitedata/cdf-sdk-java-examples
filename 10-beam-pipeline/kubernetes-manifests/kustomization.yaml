@@ -6,7 +6,7 @@ commonLabels:
   app.kubernetes.io/name: beam-example
   app: beam-example
 resources:
-  - beam-example.job.yaml
+  - beam-example-dataflow.job.yaml
 
 # The generator will convert the config.yaml file into a K8 config map which can be mapped
 # into the container

@@ -27,7 +27,7 @@ source:
 
 # Target config
 target:
-  fileUri: "./fileOut.txt"
+  fileUri: "/temp/fileOut.txt"
   dataSetExternalId:
   extractionPipelineExternalId:
 
