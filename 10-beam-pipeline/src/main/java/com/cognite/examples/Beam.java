@@ -13,13 +13,11 @@ import org.apache.beam.sdk.options.PipelineOptionsFactory;
 import org.apache.beam.sdk.transforms.*;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
-import org.apache.beam.sdk.values.TypeDescriptors;
 import org.eclipse.microprofile.config.ConfigProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Optional;
-import java.util.concurrent.ThreadLocalRandom;
 
 public class Beam {
     private static Logger LOG = LoggerFactory.getLogger(Beam.class);
@@ -129,7 +127,7 @@ public class Beam {
     /*
     The main logic to execute.
      */
-    static void runWordCount(PipelineOptions options) {
+    static PipelineResult runWordCount(PipelineOptions options) {
         Pipeline p = Pipeline.create(options);
 
         // Concepts #2 and #3: Our pipeline applies the composite CountWords transform, and passes the
@@ -150,7 +148,17 @@ public class Beam {
                         .to(targetFile)
                         .withoutSharding());
 
-        PipelineResult result = p.run();
+        return p.run();
+    }
+
+    /*
+    The entry point of the code. It executes the main logic and push job metrics upon completion.
+     */
+    public static void main(String[] args) {
+        PipelineOptions options =
+                PipelineOptionsFactory.fromArgs(args).withValidation().as(PipelineOptions.class);
+
+        PipelineResult result = runWordCount(options);
         LOG.info("Started pipeline");
         result.waitUntilFinish();
 
@@ -163,15 +171,5 @@ public class Beam {
                 + "Used memory: %d MB %n"
                 + "Free memory: %d MB", totalMemMb, usedMemMb, freeMemMb);
         LOG.info(logMessage);
-    }
-
-    /*
-    The entry point of the code. It executes the main logic and push job metrics upon completion.
-     */
-    public static void main(String[] args) {
-        PipelineOptions options =
-                PipelineOptionsFactory.fromArgs(args).withValidation().as(PipelineOptions.class);
-
-        runWordCount(options);
     }
 }
