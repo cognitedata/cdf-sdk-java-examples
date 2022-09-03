@@ -4,10 +4,11 @@
 # Information about the Cognite Data Fusion (CDF) project
 cognite:
   # (Optional) CDF deployment target
-  host: "https://api.cognitedata.com"
+  #host: "https://api.cognitedata.com"
+  host: "https://greenfield.cognitedata.com"
 
   # CDF project
-  project:
+  project: kjetilh-greenfield
 
   # Api key authentication. You can also specify this entry via an env. variable COGNITE_APIKEY
   apiKey:
