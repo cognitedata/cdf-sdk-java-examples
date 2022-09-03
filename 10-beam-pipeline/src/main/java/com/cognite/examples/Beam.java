@@ -1,5 +1,13 @@
 package com.cognite.examples;
 
+import com.cognite.beam.io.CogniteIO;
+import com.cognite.beam.io.RequestParameters;
+import com.cognite.beam.io.config.ProjectConfig;
+import com.cognite.beam.io.config.ReaderConfig;
+import com.cognite.client.CogniteClient;
+import com.cognite.client.config.TokenUrl;
+import com.cognite.client.dto.RawRow;
+import com.google.common.base.Preconditions;
 import io.prometheus.client.CollectorRegistry;
 import io.prometheus.client.Gauge;
 import org.apache.beam.sdk.Pipeline;
@@ -17,16 +25,40 @@ import org.eclipse.microprofile.config.ConfigProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Arrays;
 import java.util.Optional;
 
 public class Beam {
     private static Logger LOG = LoggerFactory.getLogger(Beam.class);
 
     /*
+    CDF project config. From config file / env variables.
+     */
+    private static final String cdfHost =
+            ConfigProvider.getConfig().getValue("cognite.host", String.class);
+    private static final String cdfProject =
+            ConfigProvider.getConfig().getValue("cognite.project", String.class);
+    private static final Optional<String> apiKey =
+            ConfigProvider.getConfig().getOptionalValue("cognite.apiKey", String.class);
+    private static final Optional<String> clientId =
+            ConfigProvider.getConfig().getOptionalValue("cognite.clientId", String.class);
+    private static final Optional<String> clientSecret =
+            ConfigProvider.getConfig().getOptionalValue("cognite.clientSecret", String.class);
+    private static final Optional<String> aadTenantId =
+            ConfigProvider.getConfig().getOptionalValue("cognite.azureADTenantId", String.class);
+    private static final String[] authScopes =
+            ConfigProvider.getConfig().getValue("cognite.scopes", String[].class);
+
+    /*
+    CDF.Raw source table configuration. From config file / env variables.
+     */
+    private static final String rawDb = ConfigProvider.getConfig().getValue("source.rawDb", String.class);
+    private static final String rawTable =
+            ConfigProvider.getConfig().getValue("source.table", String.class);
+
+    /*
     CDF data target configuration. From config file / env variables.
      */
-    private static final String sourceFile = ConfigProvider.getConfig().getValue("source.fileUri", String.class);
-    private static final String targetFile = ConfigProvider.getConfig().getValue("target.fileUri", String.class);
     private static final Optional<String> targetDataSetExtId =
             ConfigProvider.getConfig().getOptionalValue("target.dataSetExternalId", String.class);
     private static final Optional<String> extractionPipelineExtId =
@@ -127,8 +159,20 @@ public class Beam {
     /*
     The main logic to execute.
      */
-    static PipelineResult runWordCount(PipelineOptions options) {
+    static PipelineResult runWordCount(PipelineOptions options) throws Exception {
         Pipeline p = Pipeline.create(options);
+
+        /*
+        Read the Raw DB table into a PCollection
+         */
+        PCollection<RawRow> rawRowPCollection = p
+                .apply("Read raw table", CogniteIO.readRawRow()
+                        .withProjectConfig(getProjectConfig())
+                        .withReaderConfig(ReaderConfig.create()
+                                .withAppIdentifier("my-beam-app"))
+                        .withRequestParameters(RequestParameters.create()
+                                .withDbName(rawDb)
+                                .withTableName(rawTable)));
 
         // Concepts #2 and #3: Our pipeline applies the composite CountWords transform, and passes the
         // static FormatAsTextFn() to the ParDo transform.
@@ -171,5 +215,30 @@ public class Beam {
                 + "Used memory: %d MB %n"
                 + "Free memory: %d MB", totalMemMb, usedMemMb, freeMemMb);
         LOG.info(logMessage);
+    }
+
+
+    /*
+    Return the ProjectConfig.
+     */
+    private static ProjectConfig getProjectConfig() throws Exception {
+        if (clientId.isPresent() && clientSecret.isPresent() && aadTenantId.isPresent()) {
+            return ProjectConfig.create()
+                    .withProject(cdfProject)
+                    .withHost(cdfHost)
+                    .withClientId(clientId.get())
+                    .withClientSecret(clientSecret.get())
+                    .withTokenUrl(TokenUrl.generateAzureAdURL(aadTenantId.get()).toString());
+
+        } else if (apiKey.isPresent()) {
+            return ProjectConfig.create()
+                    .withProject(cdfProject)
+                    .withHost(cdfHost)
+                    .withApiKey(apiKey.get());
+        } else {
+            String message = "Unable to set up the Project Config. No valid authentication configuration.";
+            LOG.error(message);
+            throw new Exception(message);
+        }
     }
 }
