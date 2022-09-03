@@ -4,14 +4,20 @@ import com.cognite.beam.io.CogniteIO;
 import com.cognite.beam.io.RequestParameters;
 import com.cognite.beam.io.config.ProjectConfig;
 import com.cognite.beam.io.config.ReaderConfig;
+import com.cognite.beam.io.transform.BuildAssetLookup;
 import com.cognite.client.CogniteClient;
 import com.cognite.client.config.TokenUrl;
-import com.cognite.client.dto.RawRow;
+import com.cognite.client.dto.*;
+import com.cognite.client.util.ParseValue;
 import com.google.common.base.Preconditions;
+import com.google.protobuf.Value;
 import io.prometheus.client.CollectorRegistry;
 import io.prometheus.client.Gauge;
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.PipelineResult;
+import org.apache.beam.sdk.coders.KvCoder;
+import org.apache.beam.sdk.coders.StringUtf8Coder;
+import org.apache.beam.sdk.extensions.protobuf.ProtoCoder;
 import org.apache.beam.sdk.io.TextIO;
 import org.apache.beam.sdk.metrics.Counter;
 import org.apache.beam.sdk.metrics.Distribution;
@@ -19,14 +25,14 @@ import org.apache.beam.sdk.metrics.Metrics;
 import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
 import org.apache.beam.sdk.transforms.*;
-import org.apache.beam.sdk.values.KV;
-import org.apache.beam.sdk.values.PCollection;
+import org.apache.beam.sdk.values.*;
 import org.eclipse.microprofile.config.ConfigProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Arrays;
-import java.util.Optional;
+import java.io.Serializable;
+import java.util.*;
+import java.util.stream.Collectors;
 
 public class Beam {
     private static Logger LOG = LoggerFactory.getLogger(Beam.class);
@@ -67,6 +73,7 @@ public class Beam {
     /*
     Pipeline configuration
      */
+    private static final String appIdentifier = "my-beam-app";
     private static final String extIdPrefix = "source-name:";
 
     /*
@@ -97,31 +104,111 @@ public class Beam {
     // global data structures
 
     /**
-     * Concept #2: You can make your pipeline assembly code less verbose by defining your DoFns
-     * statically out-of-line. This DoFn tokenizes lines of text into individual words; we pass it to
-     * a ParDo in the pipeline.
+     * Concept #1: You can make your pipeline assembly code less verbose by defining your DoFns
+     * statically out-of-line.
+     *
+     * This DoFn parses the Raw rows into CDF Events.
      */
-    static class ExtractWordsFn extends DoFn<String, String> {
-        private final Counter emptyLines = Metrics.counter(ExtractWordsFn.class, "emptyLines");
-        private final Distribution lineLenDist =
-                Metrics.distribution(ExtractWordsFn.class, "lineLenDistro");
+    static class ParseRowToEventFn extends DoFn<RawRow, Event> {
+        final String loggingPrefix = "ParseRowToEventFn() - ";
+
+        /*
+        Configuration section. Defines key (raw) columns and values for the parsing and transform logic.
+         */
+        // Key columns
+        // These raw columns map to the event schema fields
+        final String extIdKey = "RawExtIdColumn";
+        final String descriptionKey = "RawDescriptionColumn";
+        final String startDateTimeKey = "RawStartDateTimeColumn";
+        final String endDataTimeKey = "RawEndDateTimeColumn";
+
+        // Contextualization configuration
+        final String assetReferenceKey = "RawAssetNameReferenceColumn";
+
+        // Fixed values
+        // Hardcoded values to add to the event schema fields
+        final String typeValue = "event-type";
+        final String subtypeValue = "event-subtype";
+        final String sourceValue = "data-source-name";
+
+        // Include / exclude columns
+        // For filtering the entries to the metadata bucket
+        final String excludeColumnPrefix = "exclude__";
+        List<String> excludeColumns = List.of("exclude-column-a", "exclude-column-b", "exclude-column-c");
+
+        // Metrics
+        private final Counter noElements = Metrics.counter(ParseRowToEventFn.class, "noElements");
+
+        // Side inputs
+        final PCollectionView<Map<String, Long>> dataSetsExtIdMap;
+
+        public ParseRowToEventFn(PCollectionView<Map<String, Long>> dataSetsExtIdMap) {
+            this.dataSetsExtIdMap = dataSetsExtIdMap;
+        }
 
         @ProcessElement
-        public void processElement(@Element String element, OutputReceiver<String> receiver) {
-            lineLenDist.update(element.length());
-            if (element.trim().isEmpty()) {
-                emptyLines.inc();
+        public void processElement(@Element RawRow element,
+                                   OutputReceiver<Event> output,
+                                   ProcessContext context) throws Exception {
+            noElements.inc();
+            Map<String, Long> dataSetsMap = context.sideInput(dataSetsExtIdMap);
+            Event.Builder eventBuilder = Event.newBuilder();
+            Map<String, Value> columnsMap = element.getColumns().getFieldsMap();
+
+            // Add the mandatory fields
+            // If a mandatory field is missing, you should flag it and handle that record specifically. Either by failing
+            // the entire job, or putting the failed records in a "dead letter queue".
+            if (columnsMap.containsKey(extIdKey) && columnsMap.get(extIdKey).hasStringValue()) {
+                eventBuilder.setExternalId(extIdPrefix + columnsMap.get(extIdKey).getStringValue());
+            } else {
+                String message = String.format(loggingPrefix + "Could not parse field [%s].",
+                        extIdKey);
+                LOG.error(message);
+                throw new Exception(message);
+            }
+            if (columnsMap.containsKey(descriptionKey) && columnsMap.get(descriptionKey).hasStringValue()) {
+                eventBuilder.setDescription(columnsMap.get(descriptionKey).getStringValue());
+            } else {
+                String message = String.format(loggingPrefix + "Could not parse field [%s].",
+                        descriptionKey);
+                LOG.error(message);
+                throw new Exception(message);
             }
 
-            // Split the line into words.
-            String[] words = element.split("[^\\p{L}]+", 0);
-
-            // Output each word encountered into the output PCollection.
-            for (String word : words) {
-                if (!word.isEmpty()) {
-                    receiver.output(word);
-                }
+            // Add optional fields. If an optional field is missing, no need to take any action (usually)
+            if (columnsMap.containsKey(startDateTimeKey) && columnsMap.get(startDateTimeKey).hasNumberValue()) {
+                eventBuilder.setStartTime((long) columnsMap.get(startDateTimeKey).getNumberValue());
             }
+            if (columnsMap.containsKey(endDataTimeKey) && columnsMap.get(endDataTimeKey).hasNumberValue()) {
+                eventBuilder.setEndTime((long) columnsMap.get(endDataTimeKey).getNumberValue());
+            }
+
+            // Add fixed values
+            eventBuilder
+                    .setSource(sourceValue)
+                    .setType(typeValue)
+                    .setSubtype(subtypeValue);
+
+            // Add fields to metadata based on the exclusion filters
+            Map<String, String> metadata = columnsMap.entrySet().stream()
+                    .filter(entry -> !entry.getKey().startsWith(excludeColumnPrefix))
+                    .filter(entry -> !excludeColumns.contains(entry.getKey()))
+                    .collect(Collectors.toMap(Map.Entry::getKey, entry -> ParseValue.parseString(entry.getValue())));
+
+            // Add basic lineage info
+            metadata.put("dataSource",
+                    String.format("CDF Raw: %s.%s.%s", element.getDbName(), element.getTableName(), element.getKey()));
+
+            // Don't forget to add the metadata to the event object
+            eventBuilder.putAllMetadata(metadata);
+
+            // If a target dataset has been configured, add it to the event object
+            if (getDataSetIntId().isPresent()) {
+                eventBuilder.setDataSetId(dataSetIntId.getAsLong());
+            }
+
+            // Build the event object
+            output.output(eventBuilder.build());
         }
     }
 
@@ -163,16 +250,62 @@ public class Beam {
         Pipeline p = Pipeline.create(options);
 
         /*
+        Read the CDF data sets and build an external id to internal id map.
+         */
+        PCollectionView<Map<String, Long>> dataSetsExtIdMap = p
+                .apply("Read target data sets", CogniteIO.readDataSets()
+                        .withProjectConfig(getProjectConfig())
+                        .withReaderConfig(ReaderConfig.create()
+                                .withAppIdentifier(appIdentifier)
+                                .enableMetrics(false)))
+                .apply("Select externalId + id", MapElements
+                        .into(TypeDescriptors.kvs(TypeDescriptors.strings(), TypeDescriptors.longs()))
+                        .via((DataSet dataSet) -> {
+                            LOG.info("Dataset - id: {}, extId: {}, name: {}",
+                                    dataSet.getId(),
+                                    dataSet.getExternalId(),
+                                    dataSet.getName());
+                            return KV.of(dataSet.getExternalId(), dataSet.getId());
+                        }))
+                .apply("Max per key", Max.perKey())
+                .apply("To map view", View.asMap());
+
+        /*
         Read the Raw DB table into a PCollection
          */
         PCollection<RawRow> rawRowPCollection = p
                 .apply("Read raw table", CogniteIO.readRawRow()
                         .withProjectConfig(getProjectConfig())
                         .withReaderConfig(ReaderConfig.create()
-                                .withAppIdentifier("my-beam-app"))
+                                .withAppIdentifier(appIdentifier))
                         .withRequestParameters(RequestParameters.create()
                                 .withDbName(rawDb)
                                 .withTableName(rawTable)));
+
+        /*
+        Reads the existing assets from CDF--will be used for contextualization:
+        1) Read the full collection of assets from CDF.
+        2) Minimize the size of the asset lookup. For performance optimization.
+        3) Group per key (to ensure a unique asset per lookup key). In case of multiple candidates, use the most
+        recently updated asset.
+        4) Publish the assets to a view so they can be used for memory-based lookup.
+         */
+        PCollectionView<Map<String, Asset>> assetsMap = p
+                .apply("Read assets", CogniteIO.readAssets()
+                        .withProjectConfig(getProjectConfig())
+                        .withReaderConfig(ReaderConfig.create()
+                                .withAppIdentifier(appIdentifier)))
+                .apply("Minimize", MapElements.into(TypeDescriptor.of(Asset.class))
+                        .via((Asset input) ->
+                                input.toBuilder()
+                                        .clearMetadata()
+                                        .clearSource()
+                                        .build()))
+                .apply("Add key (name)", WithKeys.of(Asset::getName))
+                .setCoder(KvCoder.of(StringUtf8Coder.of(), ProtoCoder.of(Asset.class)))
+                .apply("Select newest asset per key", Max.perKey((Comparator<Asset> & Serializable) (left, right) ->
+                        Long.compare(left.getLastUpdatedTime(), right.getLastUpdatedTime())))
+                .apply("To map view", View.asMap());
 
         // Concepts #2 and #3: Our pipeline applies the composite CountWords transform, and passes the
         // static FormatAsTextFn() to the ParDo transform.
