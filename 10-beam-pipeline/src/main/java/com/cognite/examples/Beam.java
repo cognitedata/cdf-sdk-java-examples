@@ -4,13 +4,12 @@ import com.cognite.beam.io.CogniteIO;
 import com.cognite.beam.io.RequestParameters;
 import com.cognite.beam.io.config.ProjectConfig;
 import com.cognite.beam.io.config.ReaderConfig;
-import com.cognite.beam.io.transform.BuildAssetLookup;
-import com.cognite.client.CogniteClient;
+import com.cognite.beam.io.config.WriterConfig;
 import com.cognite.client.config.TokenUrl;
 import com.cognite.client.dto.*;
 import com.cognite.client.util.ParseValue;
-import com.google.common.base.Preconditions;
 import com.google.protobuf.Value;
+import com.google.protobuf.util.Values;
 import io.prometheus.client.CollectorRegistry;
 import io.prometheus.client.Gauge;
 import org.apache.beam.sdk.Pipeline;
@@ -20,7 +19,6 @@ import org.apache.beam.sdk.coders.StringUtf8Coder;
 import org.apache.beam.sdk.extensions.protobuf.ProtoCoder;
 import org.apache.beam.sdk.io.TextIO;
 import org.apache.beam.sdk.metrics.Counter;
-import org.apache.beam.sdk.metrics.Distribution;
 import org.apache.beam.sdk.metrics.Metrics;
 import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
@@ -122,9 +120,6 @@ public class Beam {
         final String startDateTimeKey = "RawStartDateTimeColumn";
         final String endDataTimeKey = "RawEndDateTimeColumn";
 
-        // Contextualization configuration
-        final String assetReferenceKey = "RawAssetNameReferenceColumn";
-
         // Fixed values
         // Hardcoded values to add to the event schema fields
         final String typeValue = "event-type";
@@ -140,10 +135,10 @@ public class Beam {
         private final Counter noElements = Metrics.counter(ParseRowToEventFn.class, "noElements");
 
         // Side inputs
-        final PCollectionView<Map<String, Long>> dataSetsExtIdMap;
+        final PCollectionView<Map<String, Long>> dataSetsExtIdMapView;
 
-        public ParseRowToEventFn(PCollectionView<Map<String, Long>> dataSetsExtIdMap) {
-            this.dataSetsExtIdMap = dataSetsExtIdMap;
+        public ParseRowToEventFn(PCollectionView<Map<String, Long>> dataSetsExtIdMapView) {
+            this.dataSetsExtIdMapView = dataSetsExtIdMapView;
         }
 
         @ProcessElement
@@ -151,7 +146,7 @@ public class Beam {
                                    OutputReceiver<Event> output,
                                    ProcessContext context) throws Exception {
             noElements.inc();
-            Map<String, Long> dataSetsMap = context.sideInput(dataSetsExtIdMap);
+            Map<String, Long> dataSetsMap = context.sideInput(dataSetsExtIdMapView);
             Event.Builder eventBuilder = Event.newBuilder();
             Map<String, Value> columnsMap = element.getColumns().getFieldsMap();
 
@@ -203,8 +198,8 @@ public class Beam {
             eventBuilder.putAllMetadata(metadata);
 
             // If a target dataset has been configured, add it to the event object
-            if (getDataSetIntId().isPresent()) {
-                eventBuilder.setDataSetId(dataSetIntId.getAsLong());
+            if (targetDataSetExtId.isPresent() && dataSetsMap.containsKey(targetDataSetExtId.get())) {
+                eventBuilder.setDataSetId(dataSetsMap.get(targetDataSetExtId.get()));
             }
 
             // Build the event object
@@ -212,35 +207,48 @@ public class Beam {
         }
     }
 
-    /** A SimpleFunction that converts a Word and Count into a printable string. */
-    public static class FormatAsTextFn extends SimpleFunction<KV<String, Long>, String> {
-        @Override
-        public String apply(KV<String, Long> input) {
-            return input.getKey() + ": " + input.getValue();
+    static class ContextualizeEventFn extends DoFn<Event, Event> {
+        final String loggingPrefix = "ContextualizeEventFn() - ";
+        // Contextualization configuration
+        final String assetReferenceKey = "RawAssetNameReferenceColumn";
+
+        // Metrics
+        private final Counter matchElementCounter = Metrics.counter(ContextualizeEventFn.class, "matchedElement");
+
+        // Side inputs
+        final PCollectionView<Map<String, Asset>> assetMapView;
+
+        public ContextualizeEventFn(PCollectionView<Map<String, Asset>> assetMapView) {
+            this.assetMapView = assetMapView;
         }
-    }
 
-    /**
-     * A PTransform that converts a PCollection containing lines of text into a PCollection of
-     * formatted word counts.
-     *
-     * <p>Concept #3: This is a custom composite transform that bundles two transforms (ParDo and
-     * Count) as a reusable PTransform subclass. Using composite transforms allows for easy reuse,
-     * modular testing, and an improved monitoring experience.
-     */
-    public static class CountWords
-            extends PTransform<PCollection<String>, PCollection<KV<String, Long>>> {
-        @Override
-        public PCollection<KV<String, Long>> expand(PCollection<String> lines) {
+        @ProcessElement
+        public void processElement(@Element Event element,
+                                   OutputReceiver<Event> output,
+                                   ProcessContext context) {
+            Map<String, Asset> assetMap = context.sideInput(assetMapView);
 
-            // Convert lines of text into individual words.
-            PCollection<String> words = lines.apply(ParDo.of(new ExtractWordsFn()));
+            /*
+            Contextualization.
+            - Do a pure name-based, exact match asset lookup.
+            - Log a successful contextualization operation as a metric.
+             */
+            Map<String, String> metadata = element.getMetadataMap();
+            if (metadata.containsKey(assetReferenceKey) && assetMap.containsKey(metadata.get(assetReferenceKey))) {
+                output.output(element.toBuilder()
+                        .addAssetIds(assetMap.get(metadata.get(assetReferenceKey)).getId())
+                        .build());
 
-            // Count the number of times each word occurs.
-            PCollection<KV<String, Long>> wordCounts = words.apply(Count.perElement());
-
-            return wordCounts;
+                matchElementCounter.inc();
+            } else {
+                LOG.warn(loggingPrefix + "Not able to link event to asset. Source input for column {}: {}",
+                        assetReferenceKey,
+                        metadata.getOrDefault(assetReferenceKey, "null"));
+                output.output(element);
+            }
         }
+
+
     }
 
     /*
@@ -271,18 +279,6 @@ public class Beam {
                 .apply("To map view", View.asMap());
 
         /*
-        Read the Raw DB table into a PCollection
-         */
-        PCollection<RawRow> rawRowPCollection = p
-                .apply("Read raw table", CogniteIO.readRawRow()
-                        .withProjectConfig(getProjectConfig())
-                        .withReaderConfig(ReaderConfig.create()
-                                .withAppIdentifier(appIdentifier))
-                        .withRequestParameters(RequestParameters.create()
-                                .withDbName(rawDb)
-                                .withTableName(rawTable)));
-
-        /*
         Reads the existing assets from CDF--will be used for contextualization:
         1) Read the full collection of assets from CDF.
         2) Minimize the size of the asset lookup. For performance optimization.
@@ -307,23 +303,30 @@ public class Beam {
                         Long.compare(left.getLastUpdatedTime(), right.getLastUpdatedTime())))
                 .apply("To map view", View.asMap());
 
-        // Concepts #2 and #3: Our pipeline applies the composite CountWords transform, and passes the
-        // static FormatAsTextFn() to the ParDo transform.
-        p.apply("ReadLines", TextIO.read().from(sourceFile))
-                //.apply("filter", Filter.by(element -> ThreadLocalRandom.current().nextDouble() < 0.01))
-                .apply(new CountWords())
-                .apply(MapElements.via(new FormatAsTextFn()))
-                /*
-                .apply("Log counts", MapElements.into(TypeDescriptors.strings())
-                        .via(entry -> {
-                            LOG.info("Entry: {}", entry);
-                            return entry;
-                        }))
+        /*
+        The main logic.
 
-                 */
-                .apply("WriteCounts", TextIO.write()
-                        .to(targetFile)
-                        .withoutSharding());
+        - Read the Raw DB table
+        - Parse rows into events
+        - Contextualize the events
+        - Write to CDF
+         */
+        PCollection<Event> result = p
+                .apply("Read raw table", CogniteIO.readRawRow()
+                        .withProjectConfig(getProjectConfig())
+                        .withReaderConfig(ReaderConfig.create()
+                                .withAppIdentifier(appIdentifier))
+                        .withRequestParameters(RequestParameters.create()
+                                .withDbName(rawDb)
+                                .withTableName(rawTable)))
+                .apply("Parse row", ParDo.of(new ParseRowToEventFn(dataSetsExtIdMap))
+                        .withSideInputs(dataSetsExtIdMap))
+                .apply("Contextualize event", ParDo.of(new ContextualizeEventFn(assetsMap))
+                        .withSideInputs(assetsMap))
+                .apply("Write events", CogniteIO.writeEvents()
+                        .withProjectConfig(getProjectConfig())
+                        .withWriterConfig(WriterConfig.create()
+                                .withAppIdentifier(appIdentifier)));
 
         return p.run();
     }
@@ -361,7 +364,8 @@ public class Beam {
                     .withHost(cdfHost)
                     .withClientId(clientId.get())
                     .withClientSecret(clientSecret.get())
-                    .withTokenUrl(TokenUrl.generateAzureAdURL(aadTenantId.get()).toString());
+                    .withTokenUrl(TokenUrl.generateAzureAdURL(aadTenantId.get()).toString())
+                    .withAuthScopes(authScopes);
 
         } else if (apiKey.isPresent()) {
             return ProjectConfig.create()
