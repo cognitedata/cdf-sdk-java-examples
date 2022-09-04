@@ -4,7 +4,6 @@ import com.cognite.client.CogniteClient;
 import com.cognite.client.config.TokenUrl;
 import com.cognite.client.dto.*;
 import com.cognite.client.util.ParseValue;
-import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.protobuf.Value;
 import com.google.protobuf.util.Values;
