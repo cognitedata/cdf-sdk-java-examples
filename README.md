@@ -3,8 +3,8 @@
 This repository hosts a set of examples on how to use the Cognite Java SDK to interact with Cognite Data Fusion. The examples demonstrate various patterns, from general techniques like how to implement configurability, how to add monitoring to more specific patterns on how to build a streaming data pipeline and how to implement an interactive engineering diagram pipeline.
 
 ## Examples
-- [1-k8-demo](/1-k8-demo/). Demonstrating how to set up configurability, monitoring, logging and building the container.
-- [2-raw-to-clean-batch-job](/2-raw-to-clean-batch-job/). Illustrates a batch data pipeline parsing data from CDF.Raw to CDF.Event with contextualization.
+- [01-k8-demo](./01-k8-demo/). Demonstrating how to set up configurability, monitoring, logging and building the container.
+- [02-raw-to-clean-batch-job](./02-raw-to-clean-batch-job/). Illustrates a batch data pipeline parsing data from CDF.Raw to CDF.Event with contextualization.
 
 ## Quickstart
 
