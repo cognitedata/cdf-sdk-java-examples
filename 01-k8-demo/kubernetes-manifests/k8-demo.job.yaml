@@ -9,7 +9,7 @@ spec:
       containers:
         - name: k8-demo
           image: k8-demo
-          env:
+          #env:
           volumeMounts:
             - mountPath: "/config"                  # The file path used by SmallRye to search for config files.
               name: config                          # Name of the "volume" to mount. Specified below in the volumes section.

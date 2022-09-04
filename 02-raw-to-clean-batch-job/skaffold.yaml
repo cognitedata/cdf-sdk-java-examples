@@ -1,0 +1,29 @@
+apiVersion: skaffold/v2beta29
+kind: Config
+metadata:
+  name: raw-to-clean-batch-job
+build:
+  local:
+    push: false
+  artifacts:
+  - image: raw-to-clean-batch-job
+    context: .
+    jib:
+      fromImage: "gcr.io/distroless/java11-debian11"
+  tagPolicy:
+    dateTime:
+      format: "20060102T150405"
+      timezone: "UTC"
+deploy:
+  kustomize:
+    paths:
+      - ./kubernetes-manifests/
+profiles:
+  - name: ci
+    build:
+      local:
+        push: true
+    patches:
+      - op: replace
+        path: /build/artifacts/0/image
+        value: your-image-registry/raw-to-clean-batch-job  # add your image registry as prefix here

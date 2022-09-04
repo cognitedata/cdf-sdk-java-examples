@@ -29,8 +29,8 @@ public class RawToClean {
      */
     private static final String cdfHost =
             ConfigProvider.getConfig().getValue("cognite.host", String.class);
-    private static final Optional<String> cdfProject =
-            ConfigProvider.getConfig().getOptionalValue("cognite.project", String.class);
+    private static final String cdfProject =
+            ConfigProvider.getConfig().getValue("cognite.project", String.class);
     private static final Optional<String> apiKey =
             ConfigProvider.getConfig().getOptionalValue("cognite.apiKey", String.class);
     private static final Optional<String> clientId =
@@ -357,8 +357,6 @@ public class RawToClean {
      */
     private static CogniteClient getCogniteClient() throws Exception {
         if (null == cogniteClient) {
-            Preconditions.checkState(cdfProject.isPresent(),
-                    "CDF project must be specified in the configuration.");
             // The client has not been instantiated yet
             if (clientId.isPresent() && clientSecret.isPresent() && aadTenantId.isPresent()) {
                 cogniteClient = CogniteClient.ofClientCredentials(
@@ -366,11 +364,11 @@ public class RawToClean {
                                 clientSecret.get(),
                                 TokenUrl.generateAzureAdURL(aadTenantId.get()),
                                 Arrays.asList(authScopes))
-                        .withProject(cdfProject.get())
+                        .withProject(cdfProject)
                         .withBaseUrl(cdfHost);
             } else if (apiKey.isPresent()) {
                 cogniteClient = CogniteClient.ofKey(apiKey.get())
-                        .withProject(cdfProject.get())
+                        .withProject(cdfProject)
                         .withBaseUrl(cdfHost);
             } else {
                 String message = "Unable to instantiate the Cognite Client. No valid authentication configuration.";
