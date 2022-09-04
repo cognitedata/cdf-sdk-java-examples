@@ -1,10 +1,14 @@
 package com.cognite.met;
 
+import com.apptasticsoftware.rssreader.Item;
+import com.apptasticsoftware.rssreader.RssReader;
 import com.cognite.client.CogniteClient;
 import com.cognite.client.config.TokenUrl;
 import com.cognite.client.dto.Event;
 import com.cognite.client.dto.ExtractionPipelineRun;
 import com.cognite.client.dto.RawRow;
+import com.google.protobuf.Struct;
+import com.google.protobuf.util.Values;
 import io.prometheus.client.CollectorRegistry;
 import io.prometheus.client.Gauge;
 import io.prometheus.client.exporter.PushGateway;
@@ -16,6 +20,7 @@ import java.net.URL;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
+import java.util.stream.Collectors;
 
 public class AlertsRssExtractor {
     private static Logger LOG = LoggerFactory.getLogger(AlertsRssExtractor.class);
@@ -120,30 +125,20 @@ public class AlertsRssExtractor {
 
         LOG.info("Sending request to source uri: {}", sourceUri);
 
-        // Set up the reader for the raw table
-        LOG.info("Starting to read the raw table {}.{}.",
-                rawDb,
-                rawTable);
-        Iterator<List<RawRow>> rawResultsIterator = getCogniteClient().raw().rows().list(rawDb, rawTable);
+        // Set up the rss reader
+        RssReader reader = new RssReader();
+        List<Item> rssItems = reader.read(sourceUri).collect(Collectors.toList());
 
-        // Iterate through all rows in batches and write to clean. This will effectively "stream" through
-        // the data so that we have ~constant memory usage no matter how large the data set is.
-        while (rawResultsIterator.hasNext()) {
-            // Temporary collection for hosting a single batch of parsed events.
-            List<Event> events = new ArrayList<>();
-
-            // Iterate through the individual rows in a single results batch and parse them to events.
-            for (RawRow row : rawResultsIterator.next()) {
-                Event event = parseRawRowToEvent(row);
-                events.add(event);
-            }
-
-            // Upsert a batch of results to CDF
-            getCogniteClient().events().upsert(events);
-            noElementsGauge.inc(events.size());
+        // Parse the rss items to raw rows
+        List<RawRow> rawRows = new ArrayList<>();
+        for (Item item : rssItems) {
+            rawRows.add(parseRawRow(item));
         }
 
-        LOG.info("Finished processing {} rows from raw. Duration {}",
+        getCogniteClient().raw().rows().upsert(rawRows);
+        noElementsGauge.inc(rawRows.size());
+
+        LOG.info("Finished processing {} rss items. Duration {}",
                 noElementsGauge.get(),
                 Duration.between(startInstant, Instant.now()));
         jobDurationTimer.setDuration();
@@ -153,6 +148,37 @@ public class AlertsRssExtractor {
         Gauge jobCompletionTimeStamp = Gauge.build()
                 .name("job_completion_timestamp").help("Job completion time stamp").register(collectorRegistry);
         jobCompletionTimeStamp.setToCurrentTime();
+    }
+
+    /*
+    Parse the RSS item to a raw row.
+     */
+    private static RawRow parseRawRow(Item rssItem) throws Exception {
+        final String loggingPrefix = "parseRawRow() - ";
+
+        final String titleKey = "title";
+        final String descriptionKey = "description";
+        final String linkKey = "link";
+        final String authorKey = "author";
+        final String categoryKey = "category";
+        final String pubDateStringKey = "publishDateString";
+        final String pubDateKey = "publishDateTime";
+
+        RawRow.Builder rowBuilder = RawRow.newBuilder()
+                .setDbName(rawDb)
+                .setTableName(rawTable)
+                .setKey(rssItem.getGuid().get());
+
+        Struct.Builder structBuilder = Struct.newBuilder();
+
+        // parse the various expected field with check
+        rssItem.getTitle().ifPresentOrElse(
+                title -> structBuilder.putFields(titleKey, Values.of(title)),
+                () -> LOG.warn(loggingPrefix + "No title for item {}", rssItem)
+        );
+
+
+        return rowBuilder.setColumns(structBuilder).build();
     }
 
 

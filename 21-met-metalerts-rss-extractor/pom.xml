@@ -19,6 +19,7 @@
         <logback-classic.version>1.2.11</logback-classic.version>
         <smallrye.config.version>2.11.1</smallrye.config.version>
         <io.prometheus.version>0.16.0</io.prometheus.version>
+        <rssreader.version>3.0.0</rssreader.version>
         <jib.maven.plugin.version>3.2.1</jib.maven.plugin.version>
     </properties>
 
@@ -60,6 +61,11 @@
             <groupId>io.prometheus</groupId>
             <artifactId>simpleclient_pushgateway</artifactId>
             <version>${io.prometheus.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.apptasticsoftware</groupId>
+            <artifactId>rssreader</artifactId>
+            <version>${rssreader.version}</version>
         </dependency>
     </dependencies>
 
