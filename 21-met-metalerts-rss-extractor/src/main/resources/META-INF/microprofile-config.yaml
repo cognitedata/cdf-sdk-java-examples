@@ -16,10 +16,6 @@ cognite:
 
   # CDF project
   project:
-
-  # Api key authentication. You can also specify this entry via an env. variable COGNITE_APIKEY
-  apiKey:
-
   # OpenID Connect client credentials authentication
   clientId:
   # The client secret should be specified via an env. variable COGNITE_CLIENTSECRET
@@ -28,19 +24,19 @@ cognite:
   scopes:
     - "https://api.cognitedata.com/.default"
 
-# Source raw db and table to read source data from.
+# The RSS source configuration
 source:
-  rawDb: "raw-db-name"
-  table: "raw-table-name"
+  uri: "https://api.met.no/weatherapi/metalerts/1.1/"
 
 # Target data set and extraction pipelines
 target:
-  dataSetExternalId:
+  rawDb: "met"
+  table: "met-alerts-rss-items"
   extractionPipelineExternalId:
 
 # Default configuration for metrics.
 metrics:
   enable: false
-  jobName: "raw-to-clean-batch-pipeline"
+  jobName: "met-alerts-rss-extractor"
   pushGateway:
     url: "http://stable-prometheus-pushgateway.internal-services:9091"
