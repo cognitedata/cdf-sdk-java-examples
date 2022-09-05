@@ -4,7 +4,6 @@ import com.apptasticsoftware.rssreader.Item;
 import com.apptasticsoftware.rssreader.RssReader;
 import com.cognite.client.CogniteClient;
 import com.cognite.client.config.TokenUrl;
-import com.cognite.client.dto.Event;
 import com.cognite.client.dto.ExtractionPipelineRun;
 import com.cognite.client.dto.RawRow;
 import com.google.protobuf.Struct;
@@ -128,6 +127,7 @@ public class AlertsRssExtractor {
         // Set up the rss reader
         RssReader reader = new RssReader();
         List<Item> rssItems = reader.read(sourceUri).collect(Collectors.toList());
+        LOG.info("Received {} RSS items", rssItems.size());
 
         // Parse the rss items to raw rows
         List<RawRow> rawRows = new ArrayList<>();
@@ -135,6 +135,10 @@ public class AlertsRssExtractor {
             rawRows.add(parseRawRow(item));
         }
 
+        LOG.info("Writing {} rows to CDF {}.{}",
+                rawRows.size(),
+                rawDb,
+                rawTable);
         getCogniteClient().raw().rows().upsert(rawRows);
         noElementsGauge.inc(rawRows.size());
 
@@ -162,7 +166,6 @@ public class AlertsRssExtractor {
         final String authorKey = "author";
         final String categoryKey = "category";
         final String pubDateStringKey = "publishDateString";
-        final String pubDateKey = "publishDateTime";
 
         RawRow.Builder rowBuilder = RawRow.newBuilder()
                 .setDbName(rawDb)
@@ -176,9 +179,31 @@ public class AlertsRssExtractor {
                 title -> structBuilder.putFields(titleKey, Values.of(title)),
                 () -> LOG.warn(loggingPrefix + "No title for item {}", rssItem)
         );
+        rssItem.getDescription().ifPresentOrElse(
+                desc -> structBuilder.putFields(descriptionKey, Values.of(desc)),
+                () -> LOG.warn(loggingPrefix + "No description for item {}", rssItem)
+        );
+        rssItem.getLink().ifPresentOrElse(
+                link -> structBuilder.putFields(linkKey, Values.of(link)),
+                () -> LOG.warn(loggingPrefix + "No link for item {}", rssItem)
+        );
+        rssItem.getAuthor().ifPresentOrElse(
+                author -> structBuilder.putFields(authorKey, Values.of(author)),
+                () -> LOG.warn(loggingPrefix + "No author for item {}", rssItem)
+        );
+        rssItem.getCategory().ifPresentOrElse(
+                category -> structBuilder.putFields(categoryKey, Values.of(category)),
+                () -> LOG.warn(loggingPrefix + "No category for item {}", rssItem)
+        );
+        rssItem.getPubDate().ifPresentOrElse(
+                pubDate -> structBuilder.putFields(pubDateStringKey, Values.of(pubDate)),
+                () -> LOG.warn(loggingPrefix + "No publishing date for item {}", rssItem)
+        );
 
 
-        return rowBuilder.setColumns(structBuilder).build();
+        RawRow row = rowBuilder.setColumns(structBuilder).build();
+        LOG.debug(loggingPrefix + "Parsed raw row: \n {}", row);
+        return row;
     }
 
 
