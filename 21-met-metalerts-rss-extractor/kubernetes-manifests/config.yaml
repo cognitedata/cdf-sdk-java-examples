@@ -3,7 +3,8 @@
 
 # Information about the Cognite Data Fusion (CDF) project
 cognite:
-  host: "https://api.cognitedata.com"
+  #host: "https://api.cognitedata.com"
+  host: "https://greenfield.cognitedata.com"
 
   # CDF project
   project: "kjetilh-greenfield"
