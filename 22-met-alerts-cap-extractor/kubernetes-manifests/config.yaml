@@ -16,19 +16,20 @@ cognite:
   scopes:
     - "https://api.cognitedata.com/.default"
 
-# The RSS source configuration
+# The CDF Raw source configuration
 source:
-  uri: "https://api.met.no/weatherapi/metalerts/1.1/"
+  rawDb: "met"
+  rawTable: "met-alerts-rss-items"
 
 # Target data set and extraction pipelines
 target:
   rawDb: "met"
-  rawTable: "met-alerts-rss-items"
+  rawTable: "met-alerts-cap-items"
   extractionPipelineExternalId:
 
-# Configuration for metrics.
+# Default configuration for metrics.
 metrics:
   enable: false
-  jobName: "met-alerts-rss-extractor"
+  jobName: "met-alerts-cap-extractor"
   pushGateway:
-    url: "http://prometheus-pushgateway.victoria-metrics:9091"
+    url: "http://stable-prometheus-pushgateway.internal-services:9091"

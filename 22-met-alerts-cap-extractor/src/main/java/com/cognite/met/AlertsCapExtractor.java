@@ -1,7 +1,6 @@
 package com.cognite.met;
 
 import com.apptasticsoftware.rssreader.Item;
-import com.apptasticsoftware.rssreader.RssReader;
 import com.cognite.client.CogniteClient;
 import com.cognite.client.config.TokenUrl;
 import com.cognite.client.dto.ExtractionPipelineRun;
@@ -15,14 +14,16 @@ import org.eclipse.microprofile.config.ConfigProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.net.URI;
 import java.net.URL;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
-import java.util.stream.Collectors;
 
-public class AlertsRssExtractor {
-    private static Logger LOG = LoggerFactory.getLogger(AlertsRssExtractor.class);
+public class AlertsCapExtractor {
+    private static Logger LOG = LoggerFactory.getLogger(AlertsCapExtractor.class);
 
     /*
     CDF project config. From config file / env variables.
@@ -43,13 +44,14 @@ public class AlertsRssExtractor {
     /*
     Source RSS config
      */
-    private static final String sourceUri = ConfigProvider.getConfig().getValue("source.uri", String.class);
-
+    private static final String sourceRawDb = ConfigProvider.getConfig().getValue("source.rawDb", String.class);
+    private static final String sourceRawTable =
+            ConfigProvider.getConfig().getValue("source.rawTable", String.class);
     /*
     CDF.Raw target table configuration. From config file / env variables.
      */
-    private static final String rawDb = ConfigProvider.getConfig().getValue("target.rawDb", String.class);
-    private static final String rawTable =
+    private static final String targetRawDb = ConfigProvider.getConfig().getValue("target.rawDb", String.class);
+    private static final String targetRawTable =
             ConfigProvider.getConfig().getValue("target.rawTable", String.class);
     private static final Optional<String> extractionPipelineExtId =
             ConfigProvider.getConfig().getOptionalValue("target.extractionPipelineExternalId", String.class);
@@ -79,6 +81,7 @@ public class AlertsRssExtractor {
 
     // global data structures
     private static CogniteClient cogniteClient;
+    private static HttpClient httpClient;
 
     /*
     The entry point of the code. It executes the main logic and push job metrics upon completion.
@@ -116,31 +119,48 @@ public class AlertsRssExtractor {
      */
     private static void run() throws Exception {
         Instant startInstant = Instant.now();
-        LOG.info("Starting Met Alerts RSS extractor...");
+        LOG.info("Starting Met Alerts CAP extractor...");
 
         // Prepare the job start metrics
         Gauge.Timer jobDurationTimer = jobDurationSeconds.startTimer();
         jobStartTimeStamp.setToCurrentTime();
 
-        LOG.info("Sending request to source uri: {}", sourceUri);
+        LOG.info("Reading CAP alerts from CDF Raw {}.{}", targetRawDb, targetRawTable);
+        // Read the CAP raw table. Must check that the table exists
+        List<String> rawDbs = new ArrayList<>();
+        List<String> rawTables = new ArrayList<>();
+        List<RawRow> capRawRows = new ArrayList<>();
 
-        // Set up the rss reader
-        RssReader reader = new RssReader();
-        List<Item> rssItems = reader.read(sourceUri).collect(Collectors.toList());
-        LOG.info("Received {} RSS items", rssItems.size());
+        getCogniteClient().raw().databases().list()
+                .forEachRemaining(rawDbs::addAll);
+        if (rawDbs.contains(targetRawDb)) {
+            getCogniteClient().raw().tables().list(targetRawDb)
+                    .forEachRemaining(rawTables::addAll);
+            if (rawTables.contains(targetRawTable)) {
+                getCogniteClient().raw().rows().list(targetRawDb, targetRawTable)
+                        .forEachRemaining(capRawRows::addAll);
+            }
+        }
+        LOG.info("Read {} CAP alerts", capRawRows.size());
+
+        LOG.info("Reading RSS alerts from CDF Raw {}.{}", sourceRawDb, sourceRawTable);
+        // Read the RSS raw table
+        List<RawRow> rssRawRows = new ArrayList<>();
+        getCogniteClient().raw().rows().list(sourceRawDb, sourceRawTable)
+                .forEachRemaining(rssRawRows::addAll);
+        LOG.info("Read {} RSS alerts", rssRawRows.size());
 
         // Parse the rss items to raw rows
-        List<RawRow> rawRows = new ArrayList<>();
-        for (Item item : rssItems) {
-            rawRows.add(parseRawRow(item));
-        }
 
+/*
         LOG.info("Writing {} rows to CDF {}.{}",
                 rawRows.size(),
-                rawDb,
-                rawTable);
+                targetRawDb,
+                targetRawTable);
         getCogniteClient().raw().rows().upsert(rawRows);
         noElementsGauge.inc(rawRows.size());
+
+ */
 
         LOG.info("Finished processing {} rss items. Duration {}",
                 noElementsGauge.get(),
@@ -168,8 +188,8 @@ public class AlertsRssExtractor {
         final String pubDateStringKey = "publishDateString";
 
         RawRow.Builder rowBuilder = RawRow.newBuilder()
-                .setDbName(rawDb)
-                .setTableName(rawTable)
+                .setDbName(targetRawDb)
+                .setTableName(targetRawTable)
                 .setKey(rssItem.getGuid().get());
 
         Struct.Builder structBuilder = Struct.newBuilder();
@@ -206,6 +226,35 @@ public class AlertsRssExtractor {
         return row;
     }
 
+
+    /**
+     * Builds the http request based on an input URI.
+     *
+     *
+     * @return
+     * @throws Exception
+     */
+    private HttpRequest buildHttpRequest(String uri) throws Exception {
+        HttpRequest.Builder builder = HttpRequest.newBuilder()
+                .uri(new URI(uri))
+                .GET()
+                .timeout(Duration.ofSeconds(20));
+
+        return builder.build();
+    }
+
+    /**
+     * Build the http client. Configure authentication here.
+     * @return
+     */
+    private HttpClient getHttpClient() throws Exception {
+        if (null == httpClient) {
+            httpClient = HttpClient.newBuilder()
+                    .build();
+        }
+
+        return httpClient;
+    }
 
     /*
     Return the Cognite client.
