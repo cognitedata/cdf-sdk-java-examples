@@ -1,6 +1,5 @@
 package com.cognite.met;
 
-import com.apptasticsoftware.rssreader.Item;
 import com.cognite.client.CogniteClient;
 import com.cognite.client.config.TokenUrl;
 import com.cognite.client.dto.ExtractionPipelineRun;
