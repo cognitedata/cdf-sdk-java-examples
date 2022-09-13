@@ -12,7 +12,15 @@ import io.prometheus.client.exporter.PushGateway;
 import org.eclipse.microprofile.config.ConfigProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.w3c.dom.Document;
+import org.xml.sax.SAXException;
 
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.parsers.ParserConfigurationException;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.net.URI;
 import java.net.URL;
 import java.net.http.HttpClient;
@@ -149,7 +157,11 @@ public class AlertsCapExtractor {
                 .forEachRemaining(rssRawRows::addAll);
         LOG.info("Read {} RSS alerts", rssRawRows.size());
 
-        // Parse the rss items to raw rows
+        // Parse the rss items to CAP URLs
+        List<String> capUrls = rssRawRows.stream()
+                .filter(rawRow -> rawRow.getColumns().containsFields("link"))
+                .map(row -> row.getColumns().getFieldsOrThrow("link").getStringValue())
+                .toList();
 
 /*
         LOG.info("Writing {} rows to CDF {}.{}",
@@ -176,7 +188,7 @@ public class AlertsCapExtractor {
     /*
     Parse the RSS item to a raw row.
      */
-    private static RawRow parseRawRow(Item rssItem) throws Exception {
+    private static RawRow parseRawRow(String capXml) throws Exception {
         final String loggingPrefix = "parseRawRow() - ";
 
         final String titleKey = "title";
@@ -185,6 +197,28 @@ public class AlertsCapExtractor {
         final String authorKey = "author";
         final String categoryKey = "category";
         final String pubDateStringKey = "publishDateString";
+
+        // Instantiate the Factory
+        DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+
+        try (InputStream is = new ByteArrayInputStream(capXml.getBytes()) {
+
+            // parse XML file
+            DocumentBuilder db = dbf.newDocumentBuilder();
+
+            // read from a project's resources folder
+            Document doc = db.parse(is);
+
+            System.out.println("Root Element :" + doc.getDocumentElement().getNodeName());
+            System.out.println("------");
+
+            if (doc.hasChildNodes()) {
+                //
+            }
+
+        } catch (ParserConfigurationException | SAXException | IOException e) {
+            e.printStackTrace();
+        }
 
         RawRow.Builder rowBuilder = RawRow.newBuilder()
                 .setDbName(targetRawDb)
@@ -198,26 +232,7 @@ public class AlertsCapExtractor {
                 title -> structBuilder.putFields(titleKey, Values.of(title)),
                 () -> LOG.warn(loggingPrefix + "No title for item {}", rssItem)
         );
-        rssItem.getDescription().ifPresentOrElse(
-                desc -> structBuilder.putFields(descriptionKey, Values.of(desc)),
-                () -> LOG.warn(loggingPrefix + "No description for item {}", rssItem)
-        );
-        rssItem.getLink().ifPresentOrElse(
-                link -> structBuilder.putFields(linkKey, Values.of(link)),
-                () -> LOG.warn(loggingPrefix + "No link for item {}", rssItem)
-        );
-        rssItem.getAuthor().ifPresentOrElse(
-                author -> structBuilder.putFields(authorKey, Values.of(author)),
-                () -> LOG.warn(loggingPrefix + "No author for item {}", rssItem)
-        );
-        rssItem.getCategory().ifPresentOrElse(
-                category -> structBuilder.putFields(categoryKey, Values.of(category)),
-                () -> LOG.warn(loggingPrefix + "No category for item {}", rssItem)
-        );
-        rssItem.getPubDate().ifPresentOrElse(
-                pubDate -> structBuilder.putFields(pubDateStringKey, Values.of(pubDate)),
-                () -> LOG.warn(loggingPrefix + "No publishing date for item {}", rssItem)
-        );
+
 
 
         RawRow row = rowBuilder.setColumns(structBuilder).build();
