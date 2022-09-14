@@ -5,6 +5,7 @@ import com.cognite.client.config.TokenUrl;
 import com.cognite.client.dto.ExtractionPipelineRun;
 import com.cognite.client.dto.RawRow;
 import com.google.protobuf.Struct;
+import com.google.protobuf.Value;
 import com.google.protobuf.util.Values;
 import io.prometheus.client.CollectorRegistry;
 import io.prometheus.client.Gauge;
@@ -13,6 +14,9 @@ import org.eclipse.microprofile.config.ConfigProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.w3c.dom.Document;
+import org.w3c.dom.Element;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
 import org.xml.sax.SAXException;
 
 import javax.xml.parsers.DocumentBuilder;
@@ -25,6 +29,7 @@ import java.net.URI;
 import java.net.URL;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
@@ -191,41 +196,54 @@ public class AlertsCapExtractor {
     private static RawRow parseRawRow(String capXml) throws Exception {
         final String loggingPrefix = "parseRawRow() - ";
 
-        final String titleKey = "title";
-        final String descriptionKey = "description";
-        final String linkKey = "link";
-        final String authorKey = "author";
-        final String categoryKey = "category";
-        final String pubDateStringKey = "publishDateString";
+        final String mainElementTag = "info";
+        final String identifierElementTag = "identifier";
+        final String languageElementTag = "language";
+        final String languageElementValue = "en-GB";
 
         // Instantiate the Factory
         DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
 
-        try (InputStream is = new ByteArrayInputStream(capXml.getBytes()) {
+        // parse XML file
+        DocumentBuilder db = dbf.newDocumentBuilder();
+        Document doc = db.parse(new ByteArrayInputStream(capXml.getBytes(StandardCharsets.UTF_8)));
 
-            // parse XML file
-            DocumentBuilder db = dbf.newDocumentBuilder();
-
-            // read from a project's resources folder
-            Document doc = db.parse(is);
-
-            System.out.println("Root Element :" + doc.getDocumentElement().getNodeName());
-            System.out.println("------");
-
-            if (doc.hasChildNodes()) {
-                //
-            }
-
-        } catch (ParserConfigurationException | SAXException | IOException e) {
-            e.printStackTrace();
-        }
+        // optional, but recommended
+        // http://stackoverflow.com/questions/13786607/normalization-in-dom-parsing-with-java-how-does-it-work
+        doc.getDocumentElement().normalize();
 
         RawRow.Builder rowBuilder = RawRow.newBuilder()
                 .setDbName(targetRawDb)
                 .setTableName(targetRawTable)
-                .setKey(rssItem.getGuid().get());
+                .setKey(doc.getElementsByTagName(identifierElementTag).item(0).getTextContent());
 
         Struct.Builder structBuilder = Struct.newBuilder();
+
+        /*
+        Find the info element with English content
+         */
+        NodeList infoElements = doc.getElementsByTagName(mainElementTag);
+        for (int i = 0; i < infoElements.getLength(); i++) {
+            Node node = infoElements.item(i);
+            if (node.getNodeType() == Node.ELEMENT_NODE) {
+                Element element = (Element) node;
+                if (element.getElementsByTagName(languageElementTag).item(0)
+                        .getTextContent().equals(languageElementValue)) {
+                    // Iterate over all the nodes and add them to the raw row columns
+                    NodeList children = element.getChildNodes();
+                    for (int j = 0; j < children.getLength(); j++) {
+                        Node childNode = children.item(j);
+                        if (node.getNodeType() == Node.ELEMENT_NODE) {
+                            Element childElement = (Element) childNode;
+                            if (childElement.getTagName().equalsIgnoreCase("parameter")) {
+                                // Need special handling as "key and value element pairs"
+                                structBuilder.putFields(childElement.getElementsByTagName("valueName").item(0).)
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         // parse the various expected field with check
         rssItem.getTitle().ifPresentOrElse(
@@ -233,11 +251,13 @@ public class AlertsCapExtractor {
                 () -> LOG.warn(loggingPrefix + "No title for item {}", rssItem)
         );
 
-
-
         RawRow row = rowBuilder.setColumns(structBuilder).build();
         LOG.debug(loggingPrefix + "Parsed raw row: \n {}", row);
         return row;
+    }
+
+    private static Value parseValue(Node node) {
+
     }
 
 
