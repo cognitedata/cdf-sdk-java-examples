@@ -5,7 +5,6 @@ import com.cognite.client.config.TokenUrl;
 import com.cognite.client.dto.ExtractionPipelineRun;
 import com.cognite.client.dto.RawRow;
 import com.google.protobuf.ListValue;
-import com.google.protobuf.Message;
 import com.google.protobuf.Struct;
 import com.google.protobuf.Value;
 import com.google.protobuf.util.Structs;
@@ -20,14 +19,10 @@ import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
-import org.xml.sax.SAXException;
 
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
-import javax.xml.parsers.ParserConfigurationException;
 import java.io.ByteArrayInputStream;
-import java.io.IOException;
-import java.io.InputStream;
 import java.net.URI;
 import java.net.URL;
 import java.net.http.HttpClient;
@@ -196,7 +191,7 @@ public class AlertsCapExtractor {
     /*
     Parse the RSS item to a raw row.
      */
-    private static RawRow parseRawRow(String capXml) throws Exception {
+    public static RawRow parseRawRow(String capXml) throws Exception {
         final String loggingPrefix = "parseRawRow() - ";
 
         final String mainElementTag = "info";
@@ -237,7 +232,7 @@ public class AlertsCapExtractor {
                     NodeList children = element.getChildNodes();
                     for (int j = 0; j < children.getLength(); j++) {
                         Node childNode = children.item(j);
-                        if (node.getNodeType() == Node.ELEMENT_NODE) {
+                        if (childNode.getNodeType() == Node.ELEMENT_NODE) {
                             Element childElement = (Element) childNode;
                             if (childElement.getTagName().equalsIgnoreCase("parameter")
                                     || childElement.getTagName().equalsIgnoreCase("eventCode")) {
@@ -275,7 +270,7 @@ public class AlertsCapExtractor {
                 ListValue.Builder listValueBuilder = ListValue.newBuilder();
                 for (int i = 0; i < children.getLength(); i++) {
                     Node childNode = children.item(i);
-                    if (node.getNodeType() == Node.ELEMENT_NODE) {
+                    if (childNode.getNodeType() == Node.ELEMENT_NODE) {
                         Element childElement = (Element) childNode;
                         if (childElement.getTagName().equalsIgnoreCase("geocode")) {
                             // Need special handling as an array of "key and value element pairs"
