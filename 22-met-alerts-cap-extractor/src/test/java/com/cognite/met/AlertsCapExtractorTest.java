@@ -1,6 +1,7 @@
 package com.cognite.met;
 
 import com.cognite.client.dto.RawRow;
+import com.google.protobuf.util.JsonFormat;
 import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,7 +20,7 @@ class AlertsCapExtractorTest {
         Path capXmlFile = Paths.get("./src/test/resources/cap.xml");
         String capXmlString = Files.readString(capXmlFile);
         RawRow capRow = AlertsCapExtractor.parseRawRow(capXmlString);
-        LOG.info("Cap Row: /n{}", capRow);
+        LOG.info("Cap Row columns: /n{}", JsonFormat.printer().print(capRow));
 
     }
 

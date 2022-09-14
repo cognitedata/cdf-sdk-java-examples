@@ -257,10 +257,15 @@ public class AlertsCapExtractor {
         return row;
     }
 
+    /*
+    Parse a Node into a Value.
+
+    Single element nodes are parsed to text. Nested nodes are parsed to structs recursively.
+     */
     private static Value parseValue(Node node) {
         if (node.getNodeType() == Node.ELEMENT_NODE) {
             Element element = (Element) node;
-            if (element.hasChildNodes()) {
+            if (hasChildElements(element)) {
                 // We have a nested object
                 // Iterate over all the child nodes and build a struct
                 NodeList children = element.getChildNodes();
@@ -300,6 +305,27 @@ public class AlertsCapExtractor {
         } else {
             return Values.ofNull();
         }
+    }
+
+    /*
+    Check if an Element has child elements.
+     */
+    private static boolean hasChildElements(Element element) {
+        boolean returnValue = false;
+        NodeList childNodes = element.getChildNodes();
+        int childCounter = 0;
+        for (int i = 0; i < childNodes.getLength(); i++) {
+            Node childNode = childNodes.item(i);
+            if (childNode.getNodeType() == Node.ELEMENT_NODE) {
+                childCounter++;
+            }
+        }
+
+        if (childCounter > 0) {
+            returnValue = true;
+        }
+
+        return returnValue;
     }
 
 
