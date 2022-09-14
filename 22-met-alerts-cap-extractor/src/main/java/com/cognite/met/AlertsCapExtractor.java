@@ -4,8 +4,11 @@ import com.cognite.client.CogniteClient;
 import com.cognite.client.config.TokenUrl;
 import com.cognite.client.dto.ExtractionPipelineRun;
 import com.cognite.client.dto.RawRow;
+import com.google.protobuf.ListValue;
+import com.google.protobuf.Message;
 import com.google.protobuf.Struct;
 import com.google.protobuf.Value;
+import com.google.protobuf.util.Structs;
 import com.google.protobuf.util.Values;
 import io.prometheus.client.CollectorRegistry;
 import io.prometheus.client.Gauge;
@@ -229,15 +232,24 @@ public class AlertsCapExtractor {
                 Element element = (Element) node;
                 if (element.getElementsByTagName(languageElementTag).item(0)
                         .getTextContent().equals(languageElementValue)) {
-                    // Iterate over all the nodes and add them to the raw row columns
+
+                    // Iterate over all the nodes within the main item and add them to the raw row columns
                     NodeList children = element.getChildNodes();
                     for (int j = 0; j < children.getLength(); j++) {
                         Node childNode = children.item(j);
                         if (node.getNodeType() == Node.ELEMENT_NODE) {
                             Element childElement = (Element) childNode;
-                            if (childElement.getTagName().equalsIgnoreCase("parameter")) {
+                            if (childElement.getTagName().equalsIgnoreCase("parameter")
+                                    || childElement.getTagName().equalsIgnoreCase("eventCode")) {
                                 // Need special handling as "key and value element pairs"
-                                structBuilder.putFields(childElement.getElementsByTagName("valueName").item(0).)
+                                structBuilder.putFields(
+                                        childElement.getElementsByTagName("valueName").item(0).getTextContent(),
+                                        parseValue(childElement.getElementsByTagName("value").item(0)));
+                            } else {
+                                // "Regular" fields
+                                structBuilder.putFields(
+                                        childElement.getTagName(),
+                                        parseValue(childElement));
                             }
                         }
                     }
@@ -245,19 +257,54 @@ public class AlertsCapExtractor {
             }
         }
 
-        // parse the various expected field with check
-        rssItem.getTitle().ifPresentOrElse(
-                title -> structBuilder.putFields(titleKey, Values.of(title)),
-                () -> LOG.warn(loggingPrefix + "No title for item {}", rssItem)
-        );
-
         RawRow row = rowBuilder.setColumns(structBuilder).build();
         LOG.debug(loggingPrefix + "Parsed raw row: \n {}", row);
         return row;
     }
 
     private static Value parseValue(Node node) {
+        if (node.getNodeType() == Node.ELEMENT_NODE) {
+            Element element = (Element) node;
+            if (element.hasChildNodes()) {
+                // We have a nested object
+                // Iterate over all the child nodes and build a struct
+                NodeList children = element.getChildNodes();
+                Struct.Builder structBuilder = Struct.newBuilder();
 
+                // A special list holding the geocode elements
+                ListValue.Builder listValueBuilder = ListValue.newBuilder();
+                for (int i = 0; i < children.getLength(); i++) {
+                    Node childNode = children.item(i);
+                    if (node.getNodeType() == Node.ELEMENT_NODE) {
+                        Element childElement = (Element) childNode;
+                        if (childElement.getTagName().equalsIgnoreCase("geocode")) {
+                            // Need special handling as an array of "key and value element pairs"
+                            listValueBuilder.addValues(
+                                    Values.of(Structs.of(
+                                            childElement.getElementsByTagName("valueName").item(0).getTextContent(),
+                                            parseValue(childElement.getElementsByTagName("value").item(0)))
+                                    ));
+                        } else {
+                            // "Regular" fields
+                            structBuilder.putFields(
+                                    childElement.getTagName(),
+                                    parseValue(childElement));
+                        }
+                    }
+                }
+                if (listValueBuilder.getValuesList().size() > 0) {
+                    // we have some geocode elements--add them to the struct
+                    structBuilder.putFields("geocode", Values.of(listValueBuilder.build()));
+                }
+
+                return Values.of(structBuilder.build());
+            } else {
+                // A simple text content element
+                return Values.of(element.getTextContent());
+            }
+        } else {
+            return Values.ofNull();
+        }
     }
 
 
