@@ -4,6 +4,7 @@ import com.cognite.client.CogniteClient;
 import com.cognite.client.config.TokenUrl;
 import com.cognite.client.dto.ExtractionPipelineRun;
 import com.cognite.client.dto.RawRow;
+import com.cognite.client.queue.UploadQueue;
 import com.google.protobuf.ListValue;
 import com.google.protobuf.Struct;
 import com.google.protobuf.Value;
@@ -27,6 +28,7 @@ import java.net.URI;
 import java.net.URL;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
@@ -166,17 +168,28 @@ public class AlertsCapExtractor {
                 .map(row -> row.getColumns().getFieldsOrThrow("link").getStringValue())
                 .toList();
 
-/*
-        LOG.info("Writing {} rows to CDF {}.{}",
-                rawRows.size(),
-                targetRawDb,
-                targetRawTable);
-        getCogniteClient().raw().rows().upsert(rawRows);
-        noElementsGauge.inc(rawRows.size());
+        // Start the raw upload queue
+        UploadQueue<RawRow, RawRow> rawRowUploadQueue = getCogniteClient().raw().rows().uploadQueue()
+                .withPostUploadFunction(rawRows -> noElementsGauge.inc(rawRows.size()));
+        rawRowUploadQueue.start();
 
- */
+        LOG.info("Start reading CAP alerts from RSS item URLs");
+        // Read the CAP URLs
+        for (String capUrl : capUrls) {
+            LOG.info("Sending request to source uri: {}", capUrl);
+            HttpResponse<String> httpResponse =
+                    getHttpClient().send(buildHttpRequest(capUrl), HttpResponse.BodyHandlers.ofString());
+            if (httpResponse.statusCode() >= 200 && httpResponse.statusCode() < 300) {
+                rawRowUploadQueue.put(parseRawRow(httpResponse.body()));
+            } else {
+                LOG.warn("CAP URL {} cannot be retrieved: {}", httpResponse.body());
+            }
+        }
 
-        LOG.info("Finished processing {} rss items. Duration {}",
+        // Stop the upload queue. This will also perform a final upload.
+        rawRowUploadQueue.stop();
+
+        LOG.info("Finished processing {} cap items. Duration {}",
                 noElementsGauge.get(),
                 Duration.between(startInstant, Instant.now()));
         jobDurationTimer.setDuration();
@@ -335,7 +348,7 @@ public class AlertsCapExtractor {
      * @return
      * @throws Exception
      */
-    private HttpRequest buildHttpRequest(String uri) throws Exception {
+    private static HttpRequest buildHttpRequest(String uri) throws Exception {
         HttpRequest.Builder builder = HttpRequest.newBuilder()
                 .uri(new URI(uri))
                 .GET()
@@ -348,7 +361,7 @@ public class AlertsCapExtractor {
      * Build the http client. Configure authentication here.
      * @return
      */
-    private HttpClient getHttpClient() throws Exception {
+    private static HttpClient getHttpClient() throws Exception {
         if (null == httpClient) {
             httpClient = HttpClient.newBuilder()
                     .build();
