@@ -189,7 +189,7 @@ public class AlertsCapExtractor {
     }
 
     /*
-    Parse the RSS item to a raw row.
+    Parse the CAP XML item to a raw row.
      */
     public static RawRow parseRawRow(String capXml) throws Exception {
         final String loggingPrefix = "parseRawRow() - ";
@@ -331,7 +331,6 @@ public class AlertsCapExtractor {
 
     /**
      * Builds the http request based on an input URI.
-     *
      *
      * @return
      * @throws Exception
