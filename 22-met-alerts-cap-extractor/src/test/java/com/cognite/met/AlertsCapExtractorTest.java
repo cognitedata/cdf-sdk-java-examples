@@ -26,13 +26,8 @@ class AlertsCapExtractorTest {
         RawRow capRow = AlertsCapExtractor.parseRawRow(capXmlString);
         LOG.info("Cap Row columns: \n{}", JsonFormat.printer().print(capRow));
 
-        LOG.info("-------------------------- XML to Json ----------------------");
-        XmlMapper xmlMapper = new XmlMapper();
-        JsonNode node = xmlMapper.readTree(capXmlString.getBytes(StandardCharsets.UTF_8));
-        ObjectMapper jsonMapper = new ObjectMapper();
-        String json = jsonMapper.writeValueAsString(node);
-        LOG.info("XML to JSON output: \n{}", json);
-
+        assertEquals("en-GB", capRow.getColumns().getFieldsOrThrow("language").getStringValue());
+        assertEquals("Gale", capRow.getColumns().getFieldsOrThrow("event").getStringValue());
     }
 
 }

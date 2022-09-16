@@ -5,9 +5,12 @@ import com.cognite.client.config.TokenUrl;
 import com.cognite.client.dto.ExtractionPipelineRun;
 import com.cognite.client.dto.RawRow;
 import com.cognite.client.queue.UploadQueue;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.dataformat.xml.XmlMapper;
 import com.google.protobuf.ListValue;
 import com.google.protobuf.Struct;
 import com.google.protobuf.Value;
+import com.google.protobuf.util.JsonFormat;
 import com.google.protobuf.util.Structs;
 import com.google.protobuf.util.Values;
 import io.prometheus.client.CollectorRegistry;
@@ -92,6 +95,7 @@ public class AlertsCapExtractor {
             .name("job_no_elements_processed").help("Number of processed elements").register(collectorRegistry);
 
     // global data structures
+    private static XmlMapper xmlMapper = new XmlMapper();
     private static CogniteClient cogniteClient;
     private static HttpClient httpClient;
 
@@ -137,7 +141,7 @@ public class AlertsCapExtractor {
         Gauge.Timer jobDurationTimer = jobDurationSeconds.startTimer();
         jobStartTimeStamp.setToCurrentTime();
 
-        LOG.info("Reading CAP alerts from CDF Raw {}.{}", targetRawDb, targetRawTable);
+        LOG.info("Start reading CAP alerts from CDF Raw {}.{}...", targetRawDb, targetRawTable);
         // Read the CAP raw table. Must check that the table exists
         List<String> rawDbs = new ArrayList<>();
         List<String> rawTables = new ArrayList<>();
@@ -155,7 +159,7 @@ public class AlertsCapExtractor {
         }
         LOG.info("Read {} CAP alerts", capRawRows.size());
 
-        LOG.info("Reading RSS alerts from CDF Raw {}.{}", sourceRawDb, sourceRawTable);
+        LOG.info("Start reading RSS alerts from CDF Raw {}.{}...", sourceRawDb, sourceRawTable);
         // Read the RSS raw table
         List<RawRow> rssRawRows = new ArrayList<>();
         getCogniteClient().raw().rows().list(sourceRawDb, sourceRawTable)
@@ -173,10 +177,10 @@ public class AlertsCapExtractor {
                 .withPostUploadFunction(rawRows -> noElementsGauge.inc(rawRows.size()));
         rawRowUploadQueue.start();
 
-        LOG.info("Start reading CAP alerts from RSS item URLs");
+        LOG.info("Start reading CAP alerts from RSS item URLs...");
         // Read the CAP URLs
         for (String capUrl : capUrls) {
-            LOG.info("Sending request to source uri: {}", capUrl);
+            LOG.debug("Sending request to source uri: {}", capUrl);
             HttpResponse<String> httpResponse =
                     getHttpClient().send(buildHttpRequest(capUrl), HttpResponse.BodyHandlers.ofString());
             if (httpResponse.statusCode() >= 200 && httpResponse.statusCode() < 300) {
@@ -207,140 +211,53 @@ public class AlertsCapExtractor {
     public static RawRow parseRawRow(String capXml) throws Exception {
         final String loggingPrefix = "parseRawRow() - ";
 
-        final String mainElementTag = "info";
-        final String identifierElementTag = "identifier";
-        final String languageElementTag = "language";
-        final String languageElementValue = "en-GB";
-
-        // Instantiate the Factory
-        DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
-
-        // parse XML file
-        DocumentBuilder db = dbf.newDocumentBuilder();
-        Document doc = db.parse(new ByteArrayInputStream(capXml.getBytes(StandardCharsets.UTF_8)));
-
-        // optional, but recommended
-        // http://stackoverflow.com/questions/13786607/normalization-in-dom-parsing-with-java-how-does-it-work
-        doc.getDocumentElement().normalize();
+        /*
+        Key fields
+         */
+        final String mainItemField = "info";
+        final String identifierField = "identifier";
+        final String languageField = "language";
+        final String languageValue = "en-GB";
 
         RawRow.Builder rowBuilder = RawRow.newBuilder()
                 .setDbName(targetRawDb)
-                .setTableName(targetRawTable)
-                .setKey(doc.getElementsByTagName(identifierElementTag).item(0).getTextContent());
+                .setTableName(targetRawTable);
 
         Struct.Builder structBuilder = Struct.newBuilder();
+        JsonNode rootNode = xmlMapper.readTree(capXml.getBytes(StandardCharsets.UTF_8));
 
+        // Add the mandatory fields
+        // If a mandatory field is missing, you should flag it and handle that record specifically. Either by failing
+        // the entire job, or putting the failed records in a "dead letter queue".
+        if (rootNode.path(identifierField).isTextual()) {
+            rowBuilder.setKey(rootNode.path(identifierField).textValue());
+        } else {
+            String message = String.format(loggingPrefix + "Could not parse field [%s].",
+                    identifierField);
+            LOG.error(message);
+            throw new Exception(message);
+        }
         /*
         Find the info element with English content
          */
-        NodeList infoElements = doc.getElementsByTagName(mainElementTag);
-        for (int i = 0; i < infoElements.getLength(); i++) {
-            Node node = infoElements.item(i);
-            if (node.getNodeType() == Node.ELEMENT_NODE) {
-                Element element = (Element) node;
-                if (element.getElementsByTagName(languageElementTag).item(0)
-                        .getTextContent().equals(languageElementValue)) {
-
-                    // Iterate over all the nodes within the main item and add them to the raw row columns
-                    NodeList children = element.getChildNodes();
-                    for (int j = 0; j < children.getLength(); j++) {
-                        Node childNode = children.item(j);
-                        if (childNode.getNodeType() == Node.ELEMENT_NODE) {
-                            Element childElement = (Element) childNode;
-                            if (childElement.getTagName().equalsIgnoreCase("parameter")
-                                    || childElement.getTagName().equalsIgnoreCase("eventCode")) {
-                                // Need special handling as "key and value element pairs"
-                                structBuilder.putFields(
-                                        childElement.getElementsByTagName("valueName").item(0).getTextContent(),
-                                        parseValue(childElement.getElementsByTagName("value").item(0)));
-                            } else {
-                                // "Regular" fields
-                                structBuilder.putFields(
-                                        childElement.getTagName(),
-                                        parseValue(childElement));
-                            }
-                        }
-                    }
+        if (rootNode.path(mainItemField).isArray()) {
+            for (JsonNode node : rootNode.path(mainItemField)) {
+                if (node.path(languageField).isTextual()
+                        && node.path(languageField).textValue().equalsIgnoreCase(languageValue)) {
+                    JsonFormat.parser().merge(node.toString(), structBuilder);
                 }
             }
+        } else {
+            String message = String.format(loggingPrefix + "Could not parse field [%s].",
+                    mainItemField);
+            LOG.error(message);
+            throw new Exception(message);
         }
 
         RawRow row = rowBuilder.setColumns(structBuilder).build();
         LOG.debug(loggingPrefix + "Parsed raw row: \n {}", row);
         return row;
     }
-
-    /*
-    Parse a Node into a Value.
-
-    Single element nodes are parsed to text. Nested nodes are parsed to structs recursively.
-     */
-    private static Value parseValue(Node node) {
-        if (node.getNodeType() == Node.ELEMENT_NODE) {
-            Element element = (Element) node;
-            if (hasChildElements(element)) {
-                // We have a nested object
-                // Iterate over all the child nodes and build a struct
-                NodeList children = element.getChildNodes();
-                Struct.Builder structBuilder = Struct.newBuilder();
-
-                // A special list holding the geocode elements
-                ListValue.Builder listValueBuilder = ListValue.newBuilder();
-                for (int i = 0; i < children.getLength(); i++) {
-                    Node childNode = children.item(i);
-                    if (childNode.getNodeType() == Node.ELEMENT_NODE) {
-                        Element childElement = (Element) childNode;
-                        if (childElement.getTagName().equalsIgnoreCase("geocode")) {
-                            // Need special handling as an array of "key and value element pairs"
-                            listValueBuilder.addValues(
-                                    Values.of(Structs.of(
-                                            childElement.getElementsByTagName("valueName").item(0).getTextContent(),
-                                            parseValue(childElement.getElementsByTagName("value").item(0)))
-                                    ));
-                        } else {
-                            // "Regular" fields
-                            structBuilder.putFields(
-                                    childElement.getTagName(),
-                                    parseValue(childElement));
-                        }
-                    }
-                }
-                if (listValueBuilder.getValuesList().size() > 0) {
-                    // we have some geocode elements--add them to the struct
-                    structBuilder.putFields("geocode", Values.of(listValueBuilder.build()));
-                }
-
-                return Values.of(structBuilder.build());
-            } else {
-                // A simple text content element
-                return Values.of(element.getTextContent());
-            }
-        } else {
-            return Values.ofNull();
-        }
-    }
-
-    /*
-    Check if an Element has child elements.
-     */
-    private static boolean hasChildElements(Element element) {
-        boolean returnValue = false;
-        NodeList childNodes = element.getChildNodes();
-        int childCounter = 0;
-        for (int i = 0; i < childNodes.getLength(); i++) {
-            Node childNode = childNodes.item(i);
-            if (childNode.getNodeType() == Node.ELEMENT_NODE) {
-                childCounter++;
-            }
-        }
-
-        if (childCounter > 0) {
-            returnValue = true;
-        }
-
-        return returnValue;
-    }
-
 
     /**
      * Builds the http request based on an input URI.
