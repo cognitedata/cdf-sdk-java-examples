@@ -1,6 +1,7 @@
 package com.cognite.met;
 
 import com.cognite.client.CogniteClient;
+import com.cognite.client.Request;
 import com.cognite.client.config.TokenUrl;
 import com.cognite.client.dto.ExtractionPipelineRun;
 import com.cognite.client.dto.RawRow;
@@ -11,6 +12,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.dataformat.xml.XmlMapper;
 import com.google.protobuf.Struct;
 import com.google.protobuf.util.JsonFormat;
+import com.google.protobuf.util.Values;
 import io.prometheus.client.CollectorRegistry;
 import io.prometheus.client.Gauge;
 import io.prometheus.client.exporter.PushGateway;
@@ -26,6 +28,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
+import java.util.stream.Collectors;
 
 public class AlertsCapExtractor {
     private static Logger LOG = LoggerFactory.getLogger(AlertsCapExtractor.class);
@@ -47,7 +50,7 @@ public class AlertsCapExtractor {
             ConfigProvider.getConfig().getValue("cognite.scopes", String[].class);
 
     /*
-    State store configuration
+    State store configuration. From config file
      */
     private static final Optional<String> stateStoreDb =
             ConfigProvider.getConfig().getOptionalValue("stateStore.raw.database", String.class);
@@ -57,11 +60,12 @@ public class AlertsCapExtractor {
             ConfigProvider.getConfig().getOptionalValue("stateStore.raw.saveInterval", String.class);
 
     /*
-    Source RSS config
+    Source RSS config. From config file
      */
     private static final String sourceRawDb = ConfigProvider.getConfig().getValue("source.rawDb", String.class);
     private static final String sourceRawTable =
             ConfigProvider.getConfig().getValue("source.rawTable", String.class);
+
     /*
     CDF.Raw target table configuration. From config file / env variables.
      */
@@ -93,6 +97,12 @@ public class AlertsCapExtractor {
             .name("job_errors").help("Total job errors").register(collectorRegistry);
     private static final Gauge noElementsGauge = Gauge.build()
             .name("job_no_elements_processed").help("Number of processed elements").register(collectorRegistry);
+
+    /*
+    Configuration settings--not from file
+     */
+    private static final String stateStoreExtId = "statestore:rss-met-alerts";
+    private static final String lastUpdatedTimeKey = "source:lastUpdatedTime";
 
     // global data structures
     private static XmlMapper xmlMapper = new XmlMapper();
@@ -148,29 +158,40 @@ public class AlertsCapExtractor {
         LOG.info("Start reading RSS alerts from CDF Raw {}.{}...", sourceRawDb, sourceRawTable);
         // Read the RSS raw table
         List<RawRow> rssRawRows = new ArrayList<>();
-        getCogniteClient().raw().rows().list(sourceRawDb, sourceRawTable)
+        Request rssRequest = Request.create();
+        if (getStateStore().isPresent()) {
+            long lastUpdatedTime = getStateStore().get().getHigh(stateStoreExtId)
+                    .orElse(1L);
+            LOG.info("Previous state found in the state store. Will read RSS alerts with a minimum last updated time of {}",
+                    lastUpdatedTime);
+            rssRequest = rssRequest
+                    .withFilterParameter("minLastUpdatedTime", lastUpdatedTime);
+        }
+        getCogniteClient().raw().rows().list(sourceRawDb, sourceRawTable, rssRequest)
                 .forEachRemaining(rssRawRows::addAll);
         LOG.info("Read {} RSS alerts", rssRawRows.size());
 
         // Parse the rss items to CAP URLs
-        List<String> capUrls = rssRawRows.stream()
+        Map<String, Long> capUrlMap = rssRawRows.stream()
                 .filter(rawRow -> rawRow.getColumns().containsFields("link"))
-                .map(row -> row.getColumns().getFieldsOrThrow("link").getStringValue())
-                .toList();
+                .collect(Collectors.toMap(
+                        row -> row.getColumns().getFieldsOrThrow("link").getStringValue(),
+                        row -> row.getLastUpdatedTime()
+                ));
 
         // Start the raw upload queue
         UploadQueue<RawRow, RawRow> rawRowUploadQueue = getCogniteClient().raw().rows().uploadQueue()
-                .withPostUploadFunction(rawRows -> noElementsGauge.inc(rawRows.size()));
+                .withPostUploadFunction(AlertsCapExtractor::postUpload);
         rawRowUploadQueue.start();
 
         LOG.info("Start reading CAP alerts from RSS item URLs...");
         // Read the CAP URLs
-        for (String capUrl : capUrls) {
-            LOG.debug("Sending request to source uri: {}", capUrl);
+        for (Map.Entry<String, Long> capUrlEntry : capUrlMap.entrySet()) {
+            LOG.debug("Sending request to source uri: {}", capUrlEntry.getKey());
             HttpResponse<String> httpResponse =
-                    getHttpClient().send(buildHttpRequest(capUrl), HttpResponse.BodyHandlers.ofString());
+                    getHttpClient().send(buildHttpRequest(capUrlEntry.getKey()), HttpResponse.BodyHandlers.ofString());
             if (httpResponse.statusCode() >= 200 && httpResponse.statusCode() < 300) {
-                rawRowUploadQueue.put(parseRawRow(httpResponse.body()));
+                rawRowUploadQueue.put(parseRawRow(httpResponse.body(), httpResponse.uri().toString(), capUrlEntry.getValue()));
             } else {
                 LOG.warn("CAP URL {} cannot be retrieved: {}", httpResponse.body());
             }
@@ -197,7 +218,7 @@ public class AlertsCapExtractor {
     /*
     Parse the CAP XML item to a raw row.
      */
-    public static RawRow parseRawRow(String capXml) throws Exception {
+    public static RawRow parseRawRow(String capXml, String source, long lastUpdatedTime) throws Exception {
         final String loggingPrefix = "parseRawRow() - ";
 
         /*
@@ -227,7 +248,7 @@ public class AlertsCapExtractor {
             throw new Exception(message);
         }
         /*
-        Find the info element with English content
+        Find the info element with English content. This is the main data payload.
          */
         if (rootNode.path(mainItemField).isArray()) {
             for (JsonNode node : rootNode.path(mainItemField)) {
@@ -242,6 +263,12 @@ public class AlertsCapExtractor {
             LOG.error(message);
             throw new Exception(message);
         }
+
+        /*
+        Add lineage info
+         */
+        structBuilder.putFields("source:uri", Values.of(source));
+        structBuilder.putFields(lastUpdatedTimeKey, Values.of(lastUpdatedTime));
 
         RawRow row = rowBuilder.setColumns(structBuilder).build();
         LOG.debug(loggingPrefix + "Parsed raw row: \n {}", row);
@@ -261,6 +288,28 @@ public class AlertsCapExtractor {
                 .timeout(Duration.ofSeconds(20));
 
         return builder.build();
+    }
+
+    /*
+    The post upload function. Will update the elements counter and update the state store (if configured)
+    with the last updated time of the source.
+     */
+    private static void postUpload(List<RawRow> rawRows) {
+        // Update the output elements counter
+        noElementsGauge.inc(rawRows.size());
+
+        // Find the most recent updated timestamp
+        long lastUpdatedTime = rawRows.stream()
+                .map(rawRow -> rawRow.getColumns().getFieldsOrDefault(lastUpdatedTimeKey, Values.of(0L)))
+                .map(value -> value.getNumberValue())
+                .mapToLong(number -> Math.round(number))
+                .max()
+                .orElse(0L);
+        try {
+            getStateStore().ifPresent(stateStore -> stateStore.expandHigh(stateStoreExtId, lastUpdatedTime));
+        } catch (Exception e) {
+            LOG.warn("postUpload() - Unable to update the state store: {}", e.toString());
+        }
     }
 
     /**
@@ -300,9 +349,16 @@ public class AlertsCapExtractor {
     /*
     Return the state store (if configured)
      */
-    private static Optional<StateStore> getStateStore() {
+    private static Optional<StateStore> getStateStore() throws Exception {
         if (null == rawStateStore) {
             // Check if we have a state store config and instantiate the state store
+            if (stateStoreDb.isPresent() && stateStoreTable.isPresent()) {
+                rawStateStore = RawStateStore.of(getCogniteClient(), stateStoreDb.get(), stateStoreTable.get());
+                if (stateStoreSaveInterval.isPresent()) {
+                    rawStateStore = rawStateStore
+                            .withMaxCommitInterval(Duration.ofSeconds(Long.parseLong(stateStoreSaveInterval.get())));
+                }
+            }
         }
 
         return Optional.ofNullable(rawStateStore);
