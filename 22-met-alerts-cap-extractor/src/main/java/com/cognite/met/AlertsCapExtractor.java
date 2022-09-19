@@ -5,28 +5,18 @@ import com.cognite.client.config.TokenUrl;
 import com.cognite.client.dto.ExtractionPipelineRun;
 import com.cognite.client.dto.RawRow;
 import com.cognite.client.queue.UploadQueue;
+import com.cognite.client.statestore.RawStateStore;
+import com.cognite.client.statestore.StateStore;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.dataformat.xml.XmlMapper;
-import com.google.protobuf.ListValue;
 import com.google.protobuf.Struct;
-import com.google.protobuf.Value;
 import com.google.protobuf.util.JsonFormat;
-import com.google.protobuf.util.Structs;
-import com.google.protobuf.util.Values;
 import io.prometheus.client.CollectorRegistry;
 import io.prometheus.client.Gauge;
 import io.prometheus.client.exporter.PushGateway;
 import org.eclipse.microprofile.config.ConfigProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.w3c.dom.Document;
-import org.w3c.dom.Element;
-import org.w3c.dom.Node;
-import org.w3c.dom.NodeList;
-
-import javax.xml.parsers.DocumentBuilder;
-import javax.xml.parsers.DocumentBuilderFactory;
-import java.io.ByteArrayInputStream;
 import java.net.URI;
 import java.net.URL;
 import java.net.http.HttpClient;
@@ -55,6 +45,16 @@ public class AlertsCapExtractor {
             ConfigProvider.getConfig().getValue("cognite.azureADTenantId", String.class);
     private static final String[] authScopes =
             ConfigProvider.getConfig().getValue("cognite.scopes", String[].class);
+
+    /*
+    State store configuration
+     */
+    private static final Optional<String> stateStoreDb =
+            ConfigProvider.getConfig().getOptionalValue("stateStore.raw.database", String.class);
+    private static final Optional<String> stateStoreTable =
+            ConfigProvider.getConfig().getOptionalValue("stateStore.raw.table", String.class);
+    private static final Optional<String> stateStoreSaveInterval =
+            ConfigProvider.getConfig().getOptionalValue("stateStore.raw.saveInterval", String.class);
 
     /*
     Source RSS config
@@ -98,6 +98,7 @@ public class AlertsCapExtractor {
     private static XmlMapper xmlMapper = new XmlMapper();
     private static CogniteClient cogniteClient;
     private static HttpClient httpClient;
+    private static RawStateStore rawStateStore;
 
     /*
     The entry point of the code. It executes the main logic and push job metrics upon completion.
@@ -141,23 +142,8 @@ public class AlertsCapExtractor {
         Gauge.Timer jobDurationTimer = jobDurationSeconds.startTimer();
         jobStartTimeStamp.setToCurrentTime();
 
-        LOG.info("Start reading CAP alerts from CDF Raw {}.{}...", targetRawDb, targetRawTable);
-        // Read the CAP raw table. Must check that the table exists
-        List<String> rawDbs = new ArrayList<>();
-        List<String> rawTables = new ArrayList<>();
-        List<RawRow> capRawRows = new ArrayList<>();
-
-        getCogniteClient().raw().databases().list()
-                .forEachRemaining(rawDbs::addAll);
-        if (rawDbs.contains(targetRawDb)) {
-            getCogniteClient().raw().tables().list(targetRawDb)
-                    .forEachRemaining(rawTables::addAll);
-            if (rawTables.contains(targetRawTable)) {
-                getCogniteClient().raw().rows().list(targetRawDb, targetRawTable)
-                        .forEachRemaining(capRawRows::addAll);
-            }
-        }
-        LOG.info("Read {} CAP alerts", capRawRows.size());
+        // Check if we have a state store configured. If yes, initialize it
+        getStateStore().ifPresent(stateStore -> stateStore.start());
 
         LOG.info("Start reading RSS alerts from CDF Raw {}.{}...", sourceRawDb, sourceRawTable);
         // Read the RSS raw table
@@ -192,6 +178,9 @@ public class AlertsCapExtractor {
 
         // Stop the upload queue. This will also perform a final upload.
         rawRowUploadQueue.stop();
+
+        // Stop the state store. This will also store the final state
+        getStateStore().ifPresent(stateStore -> stateStore.stop());
 
         LOG.info("Finished processing {} cap items. Duration {}",
                 noElementsGauge.get(),
@@ -278,7 +267,7 @@ public class AlertsCapExtractor {
      * Build the http client. Configure authentication here.
      * @return
      */
-    private static HttpClient getHttpClient() throws Exception {
+    private static HttpClient getHttpClient() {
         if (null == httpClient) {
             httpClient = HttpClient.newBuilder()
                     .build();
@@ -306,6 +295,17 @@ public class AlertsCapExtractor {
         }
 
         return cogniteClient;
+    }
+
+    /*
+    Return the state store (if configured)
+     */
+    private static Optional<StateStore> getStateStore() {
+        if (null == rawStateStore) {
+            // Check if we have a state store config and instantiate the state store
+        }
+
+        return Optional.ofNullable(rawStateStore);
     }
 
     /*

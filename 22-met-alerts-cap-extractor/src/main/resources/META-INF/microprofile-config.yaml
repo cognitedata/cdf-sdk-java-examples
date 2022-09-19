@@ -24,6 +24,16 @@ cognite:
   scopes:
     - "https://api.cognitedata.com/.default"
 
+# State store configuration
+stateStore:
+#  local:
+#    path: "./statestore.json"
+#    saveInterval: 30
+#  raw:
+#    database: "raw-db"
+#    table: "raw-table"
+#    saveInterval: 30
+
 # The CDF Raw source configuration
 source:
   rawDb: "met"
