@@ -153,7 +153,15 @@ public class AlertsCapExtractor {
         jobStartTimeStamp.setToCurrentTime();
 
         // Check if we have a state store configured. If yes, initialize it
-        getStateStore().ifPresent(stateStore -> stateStore.start());
+        getStateStore().ifPresent(stateStore ->
+                {
+                    stateStore.start();
+                    try {
+                        stateStore.load();
+                    } catch (Exception e) {
+                        throw new RuntimeException(e);
+                    }
+                });
 
         LOG.info("Start reading RSS alerts from CDF Raw {}.{}...", sourceRawDb, sourceRawTable);
         // Read the RSS raw table
@@ -271,7 +279,7 @@ public class AlertsCapExtractor {
         structBuilder.putFields(lastUpdatedTimeKey, Values.of(lastUpdatedTime));
 
         RawRow row = rowBuilder.setColumns(structBuilder).build();
-        LOG.debug(loggingPrefix + "Parsed raw row: \n {}", row);
+        LOG.trace(loggingPrefix + "Parsed raw row: \n {}", row);
         return row;
     }
 
@@ -295,6 +303,15 @@ public class AlertsCapExtractor {
     with the last updated time of the source.
      */
     private static void postUpload(List<RawRow> rawRows) {
+        LOG.debug("postUpload() - Submitted {} raw rows to CDF.", rawRows.size());
+        LOG.debug("postUpload() - Last updated time profile for first 5 rows: {}",
+                rawRows.stream()
+                        .limit(5)
+                        .map(rawRow -> String.format("Key: %s - Last updated timestamp: %s",
+                                rawRow.getKey(),
+                                rawRow.getColumns().getFieldsOrDefault(lastUpdatedTimeKey, Values.ofNull())))
+                        .toList());
+
         // Update the output elements counter
         noElementsGauge.inc(rawRows.size());
 
@@ -307,6 +324,7 @@ public class AlertsCapExtractor {
                 .orElse(0L);
         try {
             getStateStore().ifPresent(stateStore -> stateStore.expandHigh(stateStoreExtId, lastUpdatedTime));
+            LOG.info("postUpload() - Posting to state store: {} - {}.", stateStoreExtId, lastUpdatedTime);
         } catch (Exception e) {
             LOG.warn("postUpload() - Unable to update the state store: {}", e.toString());
         }
@@ -353,6 +371,9 @@ public class AlertsCapExtractor {
         if (null == rawStateStore) {
             // Check if we have a state store config and instantiate the state store
             if (stateStoreDb.isPresent() && stateStoreTable.isPresent()) {
+                LOG.info("State store defined in the configuration. Setting up Raw state store for {}.{}",
+                        stateStoreDb.get(),
+                        stateStoreTable.get());
                 rawStateStore = RawStateStore.of(getCogniteClient(), stateStoreDb.get(), stateStoreTable.get());
                 if (stateStoreSaveInterval.isPresent()) {
                     rawStateStore = rawStateStore
