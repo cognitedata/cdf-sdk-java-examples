@@ -97,6 +97,8 @@ public class AlertsCapExtractor {
             .name("job_errors").help("Total job errors").register(collectorRegistry);
     private static final Gauge noElementsGauge = Gauge.build()
             .name("job_no_elements_processed").help("Number of processed elements").register(collectorRegistry);
+    private static final Gauge noInvalidCapElementsGauge = Gauge.build()
+            .name("job_no_invalid_cap_elements").help("Number of invalid CAP elements").register(collectorRegistry);
 
     /*
     Configuration settings--not from file
@@ -152,7 +154,7 @@ public class AlertsCapExtractor {
         Gauge.Timer jobDurationTimer = jobDurationSeconds.startTimer();
         jobStartTimeStamp.setToCurrentTime();
 
-        // Check if we have a state store configured. If yes, initialize it
+        // Check if we have a state store configured. If yes, initialize it.
         getStateStore().ifPresent(stateStore ->
                 {
                     stateStore.start();
@@ -168,6 +170,7 @@ public class AlertsCapExtractor {
         List<RawRow> rssRawRows = new ArrayList<>();
         Request rssRequest = Request.create();
         if (getStateStore().isPresent()) {
+            // We have a state store. Check the last updated timestamp and add it to the query as a filter.
             long lastUpdatedTime = getStateStore().get().getHigh(stateStoreExtId)
                     .orElse(1L);
             LOG.info("Previous state found in the state store. Will read RSS alerts with a minimum last updated time of {}",
@@ -175,9 +178,10 @@ public class AlertsCapExtractor {
             rssRequest = rssRequest
                     .withFilterParameter("minLastUpdatedTime", lastUpdatedTime);
         }
+
         getCogniteClient().raw().rows().list(sourceRawDb, sourceRawTable, rssRequest)
                 .forEachRemaining(rssRawRows::addAll);
-        LOG.info("Read {} RSS alerts", rssRawRows.size());
+        LOG.info("Finished reading {} RSS alerts", rssRawRows.size());
 
         // Parse the rss items to CAP URLs
         Map<String, Long> capUrlMap = rssRawRows.stream()
@@ -187,7 +191,7 @@ public class AlertsCapExtractor {
                         row -> row.getLastUpdatedTime()
                 ));
 
-        // Start the raw upload queue
+        // Start the raw upload queue to prepare for uploading CAP alerts
         UploadQueue<RawRow, RawRow> rawRowUploadQueue = getCogniteClient().raw().rows().uploadQueue()
                 .withPostUploadFunction(AlertsCapExtractor::postUpload);
         rawRowUploadQueue.start();
@@ -199,8 +203,11 @@ public class AlertsCapExtractor {
             HttpResponse<String> httpResponse =
                     getHttpClient().send(buildHttpRequest(capUrlEntry.getKey()), HttpResponse.BodyHandlers.ofString());
             if (httpResponse.statusCode() >= 200 && httpResponse.statusCode() < 300) {
+                // We have a successful response. Parse the response body into a Raw row
                 rawRowUploadQueue.put(parseRawRow(httpResponse.body(), httpResponse.uri().toString(), capUrlEntry.getValue()));
             } else {
+                // Unsuccessful request. Most likely the CAP URL has expired
+                noInvalidCapElementsGauge.inc();
                 LOG.warn("CAP URL {} cannot be retrieved: {}", httpResponse.body());
             }
         }
