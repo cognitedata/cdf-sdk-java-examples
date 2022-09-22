@@ -97,6 +97,7 @@ public class AlertsRssExtractor {
         } catch (Exception e) {
             LOG.error("Unrecoverable error. Will exit. {}", e.toString());
             errorGauge.inc();
+            jobFailed = true;
             if (extractionPipelineExtId.isPresent()) {
                 writeExtractionPipelineRun(ExtractionPipelineRun.Status.FAILURE,
                         String.format("Job failed: %s", e.getMessage()));

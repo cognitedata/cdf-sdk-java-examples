@@ -123,12 +123,13 @@ public class AlertsCapExtractor {
 
             if (extractionPipelineExtId.isPresent()) {
                 writeExtractionPipelineRun(ExtractionPipelineRun.Status.SUCCESS,
-                        String.format("Upserted %d RSS items to CDF Raw.",
+                        String.format("Upserted %d CAP items to CDF Raw.",
                                 noElementsGauge.get()));
             }
         } catch (Exception e) {
             LOG.error("Unrecoverable error. Will exit. {}", e.toString());
             errorGauge.inc();
+            jobFailed = true;
             if (extractionPipelineExtId.isPresent()) {
                 writeExtractionPipelineRun(ExtractionPipelineRun.Status.FAILURE,
                         String.format("Job failed: %s", e.getMessage()));
@@ -230,51 +231,72 @@ public class AlertsCapExtractor {
         jobCompletionTimeStamp.setToCurrentTime();
     }
 
-    /*
-    Parse the CAP XML item to a raw row.
+
+    /**
+     * Parse the CAP XML item to a raw row:
+     *     - Convert the XML to a Json node tree to facilitate easier parsing logic.
+     *     - Iterate over the collection of CAP information elements and identify the one with English language.
+     *     - Add the entire English information element as Raw row columns.
+     *     - Add basic lineage info to the Raw row.
+     *     - Add source last updated time for delta load logic.
+     *
+     * @param capXml The source CAP XML.
+     * @param sourceUri The source CAP URI.
+     * @param lastUpdatedTime The RSS source last updated time (from the CDF Raw RSS row).
+     * @return The {@link RawRow} representing the CAP info element
+     * @throws Exception
      */
-    public static RawRow parseRawRow(String capXml, String source, long lastUpdatedTime) throws Exception {
+    public static RawRow parseRawRow(String capXml, String sourceUri, long lastUpdatedTime) throws Exception {
         final String loggingPrefix = "parseRawRow() - ";
 
         /*
-        Key fields
+        Key fields:
+        - Source fields to use when parsing the source data.
+        - Fields to add to the row for adding lineage etc.
          */
-        final String mainItemField = "info";
-        final String identifierField = "identifier";
-        final String languageField = "language";
-        final String languageValue = "en-GB";
+        final String sourceMainItemField = "info";
+        final String sourceIdentifierField = "identifier";
+        final String sourceLanguageField = "language";
+        final String sourceLanguageValue = "en-GB";
 
+        final String sourceUriKey = "source:uri";
+
+        // The main Raw row builder objects we will populate with parsed data
         RawRow.Builder rowBuilder = RawRow.newBuilder()
                 .setDbName(targetRawDb)
                 .setTableName(targetRawTable);
 
         Struct.Builder structBuilder = Struct.newBuilder();
+
+        // Use Jackson XML mapper to convert the XML into a node tree that is easier to parse
         JsonNode rootNode = xmlMapper.readTree(capXml.getBytes(StandardCharsets.UTF_8));
 
         // Add the mandatory fields
         // If a mandatory field is missing, you should flag it and handle that record specifically. Either by failing
-        // the entire job, or putting the failed records in a "dead letter queue".
-        if (rootNode.path(identifierField).isTextual()) {
-            rowBuilder.setKey(rootNode.path(identifierField).textValue());
+        // the entire job, or putting the failed records in a "dead letter queue". In this case, we fail the job
+        // by throwing an exception.
+        if (rootNode.path(sourceIdentifierField).isTextual()) {
+            rowBuilder.setKey(rootNode.path(sourceIdentifierField).textValue());
         } else {
             String message = String.format(loggingPrefix + "Could not parse field [%s].",
-                    identifierField);
+                    sourceIdentifierField);
             LOG.error(message);
             throw new Exception(message);
         }
         /*
-        Find the info element with English content. This is the main data payload.
+        Find the single info element with English content among the collection of CAP info elements. This is the main
+        data payload. We add all the entire data payload as (nested) fields to the raw row columns.
          */
-        if (rootNode.path(mainItemField).isArray()) {
-            for (JsonNode node : rootNode.path(mainItemField)) {
-                if (node.path(languageField).isTextual()
-                        && node.path(languageField).textValue().equalsIgnoreCase(languageValue)) {
+        if (rootNode.path(sourceMainItemField).isArray()) {
+            for (JsonNode node : rootNode.path(sourceMainItemField)) {
+                if (node.path(sourceLanguageField).isTextual()
+                        && node.path(sourceLanguageField).textValue().equalsIgnoreCase(sourceLanguageValue)) {
                     JsonFormat.parser().merge(node.toString(), structBuilder);
                 }
             }
         } else {
             String message = String.format(loggingPrefix + "Could not parse field [%s].",
-                    mainItemField);
+                    sourceMainItemField);
             LOG.error(message);
             throw new Exception(message);
         }
@@ -282,7 +304,7 @@ public class AlertsCapExtractor {
         /*
         Add lineage info
          */
-        structBuilder.putFields("source:uri", Values.of(source));
+        structBuilder.putFields(sourceUriKey, Values.of(sourceUri));
         structBuilder.putFields(lastUpdatedTimeKey, Values.of(lastUpdatedTime));
 
         RawRow row = rowBuilder.setColumns(structBuilder).build();
