@@ -336,8 +336,12 @@ public class AlertsCapExtractor {
     with the last updated time of the source.
      */
     private static void postUpload(List<RawRow> rawRows) {
-        LOG.debug("postUpload() - Submitted {} raw rows to CDF.", rawRows.size());
-        LOG.debug("postUpload() - Last updated time profile for first 5 rows: {}",
+        String loggingPrefix = "postUpload() -";
+        if (rawRows.isEmpty()) {
+            LOG.info(loggingPrefix + "No rows posted to Raw--will skip updating the state store.");
+        }
+        LOG.debug(loggingPrefix + "Submitted {} raw rows to CDF.", rawRows.size());
+        LOG.debug(loggingPrefix + "Last updated time profile for first 5 rows: {}",
                 rawRows.stream()
                         .limit(5)
                         .map(rawRow -> String.format("Key: %s - Last updated timestamp: %s",
