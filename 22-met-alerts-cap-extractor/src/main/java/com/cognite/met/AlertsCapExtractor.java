@@ -339,6 +339,7 @@ public class AlertsCapExtractor {
         String loggingPrefix = "postUpload() -";
         if (rawRows.isEmpty()) {
             LOG.info(loggingPrefix + "No rows posted to Raw--will skip updating the state store.");
+            return;
         }
         LOG.debug(loggingPrefix + "Submitted {} raw rows to CDF.", rawRows.size());
         LOG.debug(loggingPrefix + "Last updated time profile for first 5 rows: {}",
