@@ -158,9 +158,9 @@ public class AlertsCapExtractor {
         // Check if we have a state store configured. If yes, initialize it.
         getStateStore().ifPresent(stateStore ->
                 {
-                    stateStore.start();
                     try {
                         stateStore.load();
+                        stateStore.start();
                     } catch (Exception e) {
                         throw new RuntimeException(e);
                     }
