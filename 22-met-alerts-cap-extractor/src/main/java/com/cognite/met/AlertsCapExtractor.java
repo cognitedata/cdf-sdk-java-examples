@@ -150,10 +150,9 @@ public class AlertsCapExtractor {
     The main logic to execute.
      */
     private static void run() throws Exception {
-        Instant startInstant = Instant.now();
         LOG.info("Starting Met Alerts CAP extractor...");
 
-        // Prepare the job start metrics
+        // Prepare the job duration metrics
         Gauge.Timer jobDurationTimer = jobDurationSeconds.startTimer();
         jobStartTimeStamp.setToCurrentTime();
 
@@ -223,10 +222,11 @@ public class AlertsCapExtractor {
         // Stop the state store. This will also store the final state
         getStateStore().ifPresent(stateStore -> stateStore.stop());
 
+        // All done
+        jobDurationTimer.setDuration();
         LOG.info("Finished processing {} cap items. Duration {}",
                 noElementsGauge.get(),
-                Duration.between(startInstant, Instant.now()));
-        jobDurationTimer.setDuration();
+                Duration.ofSeconds((long) jobDurationSeconds.get()));
 
         // The job completion metric is only added to the registry after job success,
         // so that a previous success in the Pushgateway isn't overwritten on failure.

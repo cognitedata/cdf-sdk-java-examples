@@ -70,8 +70,6 @@ public class AlertsRssExtractor {
     private static final CollectorRegistry collectorRegistry = new CollectorRegistry();
     private static final Gauge jobDurationSeconds = Gauge.build()
             .name("job_duration_seconds").help("Job duration in seconds").register(collectorRegistry);
-    private static final Gauge jobStartTimeStamp = Gauge.build()
-            .name("job_start_timestamp").help("Job start timestamp").register(collectorRegistry);
     private static final Gauge errorGauge = Gauge.build()
             .name("job_errors").help("Total job errors").register(collectorRegistry);
     private static final Gauge noElementsGauge = Gauge.build()
@@ -116,12 +114,10 @@ public class AlertsRssExtractor {
     The main logic to execute.
      */
     private static void run() throws Exception {
-        Instant startInstant = Instant.now();
         LOG.info("Starting Met Alerts RSS extractor...");
 
-        // Prepare the job start metrics
+        // Prepare the job duration metrics
         Gauge.Timer jobDurationTimer = jobDurationSeconds.startTimer();
-        jobStartTimeStamp.setToCurrentTime();
 
         LOG.info("Sending request to source uri: {}", sourceUri);
 
@@ -143,10 +139,11 @@ public class AlertsRssExtractor {
         getCogniteClient().raw().rows().upsert(rawRows);
         noElementsGauge.inc(rawRows.size());
 
+        // All done
+        jobDurationTimer.setDuration();
         LOG.info("Finished processing {} rss items. Duration {}",
                 noElementsGauge.get(),
-                Duration.between(startInstant, Instant.now()));
-        jobDurationTimer.setDuration();
+                Duration.ofSeconds((long) jobDurationSeconds.get()));
 
         // The job completion metric is only added to the registry after job success,
         // so that a previous success in the Pushgateway isn't overwritten on failure.
@@ -158,7 +155,7 @@ public class AlertsRssExtractor {
     /*
     Parse the RSS item to a raw row.
      */
-    private static RawRow parseRawRow(Item rssItem) throws Exception {
+    private static RawRow parseRawRow(Item rssItem) {
         final String loggingPrefix = "parseRawRow() - ";
 
         final String titleKey = "title";
