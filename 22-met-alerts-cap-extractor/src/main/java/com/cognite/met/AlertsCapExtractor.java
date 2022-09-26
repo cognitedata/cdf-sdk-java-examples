@@ -27,6 +27,8 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -174,8 +176,10 @@ public class AlertsCapExtractor {
             // We have a state store. Check the last updated timestamp and add it to the query as a filter.
             long lastUpdatedTime = getStateStore().get().getHigh(stateStoreExtId)
                     .orElse(1L);
-            LOG.info("Previous state found in the state store. Will read RSS alerts with a minimum last updated time of {}",
-                    lastUpdatedTime);
+            LOG.info("Previous state found in the state store. Will read RSS alerts with a minimum last updated time of {} "
+                    + "-> {} [UTC]",
+                    lastUpdatedTime,
+                    Instant.ofEpochMilli(lastUpdatedTime).atOffset(ZoneOffset.UTC));
             rssRequest = rssRequest
                     .withFilterParameter("minLastUpdatedTime", lastUpdatedTime);
         }
