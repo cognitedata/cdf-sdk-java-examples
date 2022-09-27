@@ -1,23 +1,19 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
+
     <groupId>com.cognite</groupId>
-    <artifactId>k8-demo</artifactId>
-    <packaging>jar</packaging>
-    <name>k8-demo</name>
-    <description>demo</description>
+    <artifactId>met-alerts-cap-pipeline</artifactId>
     <version>1.0-SNAPSHOT</version>
 
-
     <properties>
-        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
         <maven.compiler.release>17</maven.compiler.release>
 
-        <cdf-sdk-java.version>1.16.0</cdf-sdk-java.version>
+        <cdf-sdk-java.version>1.17.0</cdf-sdk-java.version>
         <slf4j-api.version>2.0.1</slf4j-api.version>
         <logback-classic.version>1.4.1</logback-classic.version>
         <smallrye.config.version>2.12.0</smallrye.config.version>
@@ -58,25 +54,22 @@
             <artifactId>simpleclient_hotspot</artifactId>
             <version>${io.prometheus.version}</version>
         </dependency>
-        <!-- Exposition HTTPServer-->
+        <!-- Pushgateway exposition-->
         <dependency>
             <groupId>io.prometheus</groupId>
             <artifactId>simpleclient_pushgateway</artifactId>
             <version>${io.prometheus.version}</version>
         </dependency>
     </dependencies>
+
     <build>
         <plugins>
             <plugin>
                 <groupId>com.google.cloud.tools</groupId>
                 <artifactId>jib-maven-plugin</artifactId>
                 <version>${jib.maven.plugin.version}</version>
-                <configuration>
-                    <container>
-                        <creationTime>USE_CURRENT_TIMESTAMP</creationTime>
-                    </container>
-                </configuration>
             </plugin>
         </plugins>
     </build>
+
 </project>

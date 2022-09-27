@@ -41,8 +41,6 @@ public class Demo {
     static final CollectorRegistry collectorRegistry = new CollectorRegistry();
     static final Gauge jobDurationSeconds = Gauge.build()
             .name("job_duration_seconds").help("Job duration in seconds").register(collectorRegistry);
-    static final Gauge jobStartTimeStamp = Gauge.build()
-            .name("job_start_timestamp").help("Job start time stamp").register(collectorRegistry);
     static final Gauge errorGauge = Gauge.build()
             .name("job_errors").help("Total job errors").register(collectorRegistry);
 
@@ -75,7 +73,6 @@ public class Demo {
     private static void run() throws Exception {
         LOG.info("Starting container...");
         Gauge.Timer jobDurationTimer = jobDurationSeconds.startTimer();
-        jobStartTimeStamp.setToCurrentTime();
 
         LOG.info("Starting some work...");
         Thread.sleep(3000);

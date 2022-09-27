@@ -77,6 +77,8 @@ public class RawToClean {
     private static final CollectorRegistry collectorRegistry = new CollectorRegistry();
     private static final Gauge jobDurationSeconds = Gauge.build()
             .name("job_duration_seconds").help("Job duration in seconds").register(collectorRegistry);
+    private static final Gauge jobStartTimeStamp = Gauge.build()
+            .name("job_start_timestamp").help("Job start timestamp").register(collectorRegistry);
     private static final Gauge errorGauge = Gauge.build()
             .name("job_errors").help("Total job errors").register(collectorRegistry);
     private static final Gauge noElementsGauge = Gauge.build()
@@ -126,10 +128,12 @@ public class RawToClean {
     The main logic to execute.
      */
     private static void run() throws Exception {
+        Instant startInstant = Instant.now();
         LOG.info("Starting raw to clean pipeline...");
 
-        // Prepare the job duration metrics
+        // Prepare the job start metrics
         Gauge.Timer jobDurationTimer = jobDurationSeconds.startTimer();
+        jobStartTimeStamp.setToCurrentTime();
 
         // Set up the reader for the raw table
         LOG.info("Starting to read the raw table {}.{}.",
@@ -154,11 +158,10 @@ public class RawToClean {
             noElementsGauge.inc(events.size());
         }
 
-        jobDurationTimer.setDuration();
         LOG.info("Finished processing {} rows from raw. Duration {}",
                 noElementsGauge.get(),
-                Duration.ofSeconds((long) jobDurationSeconds.get()));
-
+                Duration.between(startInstant, Instant.now()));
+        jobDurationTimer.setDuration();
 
         // The job completion metric is only added to the registry after job success,
         // so that a previous success in the Pushgateway isn't overwritten on failure.

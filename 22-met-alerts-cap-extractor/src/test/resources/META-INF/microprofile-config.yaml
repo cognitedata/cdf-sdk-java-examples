@@ -1,0 +1,43 @@
+# Add support for reading an external config file. This enables using the following options for
+# configuring the module:
+# - environment variables
+# - YAML config file located at the absolute path "/config/config.yaml"
+smallrye:
+  config:
+    locations: "/config/config.yaml"
+
+# Default config settings for your module. These settings will be applied unless you override them with a 
+# configuration file and/or environment variable. We recommend using a configuration file (i.e. ConfigMap) to set all
+# parameters except secrets which should be linked into the pod as env variables via K8 Secrets.
+
+# Information about the Cognite Data Fusion (CDF) project
+cognite:
+  host: "https://api.cognitedata.com"
+
+  # CDF project
+  project: test
+  # OpenID Connect client credentials authentication
+  clientId: test
+  # The client secret should be specified via an env. variable COGNITE_CLIENTSECRET
+  clientSecret: test
+  azureADTenantId: test
+  scopes:
+    - "https://api.cognitedata.com/.default"
+
+# The CDF Raw source configuration
+source:
+  rawDb: "met"
+  rawTable: "met-alerts-rss-items"
+
+# Target data set and extraction pipelines
+target:
+  rawDb: "met"
+  rawTable: "met-alerts-cap-items"
+  extractionPipelineExternalId:
+
+# Default configuration for metrics.
+metrics:
+  enable: false
+  jobName: "met-alerts-cap-extractor"
+  pushGateway:
+    url: "http://stable-prometheus-pushgateway.internal-services:9091"

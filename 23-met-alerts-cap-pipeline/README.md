@@ -1,6 +1,6 @@
-## Batch job example: Raw to clean data pipeline
+## CAP alerts, Raw to Clean pipeline
 
-This example illustrates how to implement a Cognite Data Fusion "raw to clean" batch data pipeline and package it as a container. It uses the practices of logging, monitoring, configuration presented in [1-k8-demo](../1-k8-demo/README.md).
+This pipeline processes data from CDF Raw representing CAP met alerts. It uses the practices of logging, monitoring, configuration presented in [1-k8-demo](../1-k8-demo/README.md).
 
 The data pipeline performs the following tasks:
 1) Read the main input from a `CDF.Raw` table.

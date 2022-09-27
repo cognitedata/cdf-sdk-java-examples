@@ -1,0 +1,140 @@
+<?xml version='1.0' encoding='UTF-8' standalone='yes'?>
+<alert xmlns="urn:oasis:names:tc:emergency:cap:1.2">
+  <identifier>2.49.0.1.578.0.220913100000.0858_1_0</identifier>
+  <sender>noreply@met.no</sender>
+  <sent>2022-09-13T09:40:10+00:00</sent>
+  <status>Actual</status>
+  <msgType>Alert</msgType>
+  <scope>Public</scope><code>CAP-V12.NO.V1.0</code>
+  
+  <info>
+    <language>no</language>
+    <category>Met</category>
+    <event>Kuling</event>
+    <responseType>Monitor</responseType>
+    <urgency>Future</urgency>
+    <severity>Moderate</severity>
+    <certainty>Likely</certainty>
+    <eventCode>
+      <valueName>eventType</valueName>
+      <value>gale</value>
+    </eventCode>
+    <effective>2022-09-14T04:00:00+00:00</effective>
+    <onset>2022-09-14T04:00:00+00:00</onset>
+    <expires>2022-09-14T22:00:00+00:00</expires>
+    <senderName>Meteorologisk Institutt</senderName>
+    <headline>Kuling, E3, 14 september 04:00 UTC til 14 september 22:00 UTC. </headline>
+    <description>Nordøst sterk kuling 20 m/s.</description>
+    <instruction>Ikke dra ut i småbåt.</instruction>
+    <web>
+      https://www.met.no/vaer-og-klima/Ekstremvaervarsler-og-andre-farevarsler
+    </web>
+    <contact>https://www.met.no/kontakt-oss</contact>
+    
+    <parameter>
+      <valueName>consequences</valueName>
+      <value>Middels høye bølger. Bølgekammene er ved å brytes opp til sjørokk.</value>
+    </parameter>
+    <parameter>
+      <valueName>eventAwarenessName</valueName>
+      <value>Kuling</value>
+    </parameter>
+    <parameter>
+      <valueName>awareness_level</valueName>
+      <value>2; yellow; Moderate</value>
+    </parameter>
+    <parameter>
+      <valueName>awarenessSeriousness</valueName>
+      <value>Utfordrende situasjon</value>
+    </parameter>
+    <parameter>
+      <valueName>awareness_type</valueName>
+      <value>1; Wind</value>
+    </parameter>
+    <parameter>
+      <valueName>triggerLevel</valueName>
+      <value>17.2 m/s</value>
+    </parameter>
+    <parameter>
+      <valueName>awarenessResponse</valueName>
+      <value>Følg med</value>
+    </parameter>
+    <parameter>
+      <valueName>geographicDomain</valueName>
+      <value>marine</value>
+    </parameter>
+    <area>
+      <areaDesc>E3</areaDesc>
+      <polygon>
+        67.5,0.0 70.0,0.0 70.0,10.0 68.22,10.0 67.5,10.0 67.5,0.0 
+      </polygon>
+      <altitude>0</altitude>
+      <ceiling>900</ceiling>
+    </area>
+  </info>
+  <info>
+    <language>en-GB</language>
+    <category>Met</category>
+    <event>Gale</event>
+    <responseType>Monitor</responseType>
+    <urgency>Future</urgency>
+    <severity>Moderate</severity>
+    <certainty>Likely</certainty>
+    <eventCode>
+      <valueName>eventType</valueName>
+      <value>gale</value>
+    </eventCode>
+    <effective>2022-09-14T04:00:00+00:00</effective>
+    <onset>2022-09-14T04:00:00+00:00</onset>
+    <expires>2022-09-14T22:00:00+00:00</expires>
+    <senderName>MET Norway</senderName>
+    <headline>Gale Force, E3, 14 September 04:00 UTC to 14 September 22:00 UTC.</headline>
+    <description>Northeast gale 8.</description>
+    <instruction>Do not go out at sea in a small boat.</instruction>
+    <web>
+      https://www.met.no/vaer-og-klima/Ekstremvaervarsler-og-andre-farevarsler
+    </web>
+    <contact>https://www.met.no/en/contact-us</contact>
+    
+    <parameter>
+      <valueName>consequences</valueName>
+      <value>Moderately high waves with breaking crests forming spindrift. Considerable airborne spray.</value>
+    </parameter>
+    <parameter>
+      <valueName>eventAwarenessName</valueName>
+      <value>Gale Force</value>
+    </parameter>
+    <parameter>
+      <valueName>awareness_level</valueName>
+      <value>2; yellow; Moderate</value>
+    </parameter>
+    <parameter>
+      <valueName>awarenessSeriousness</valueName>
+      <value>Challenging situation</value>
+    </parameter>
+    <parameter>
+      <valueName>awareness_type</valueName>
+      <value>1; Wind</value>
+    </parameter>
+    <parameter>
+      <valueName>triggerLevel</valueName>
+      <value>17.2 m/s</value>
+    </parameter>
+    <parameter>
+      <valueName>awarenessResponse</valueName>
+      <value>Be aware</value>
+    </parameter>
+    <parameter>
+      <valueName>geographicDomain</valueName>
+      <value>marine</value>
+    </parameter>
+    <area>
+    <areaDesc>E3</areaDesc>
+    <polygon>
+      67.5,0.0 70.0,0.0 70.0,10.0 68.22,10.0 67.5,10.0 67.5,0.0 
+    </polygon>
+    <altitude>0</altitude>
+    <ceiling>900</ceiling>
+    </area>
+  </info>
+</alert>

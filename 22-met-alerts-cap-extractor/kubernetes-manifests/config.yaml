@@ -1,0 +1,35 @@
+# Custom configuration options should be added to this file. It will be mapped into the
+# application pod and made available to the container as /config/config.yaml
+
+# Information about the Cognite Data Fusion (CDF) project
+cognite:
+  #host: "https://api.cognitedata.com"
+  host: "https://greenfield.cognitedata.com"
+
+  # CDF project
+  project: "kjetilh-greenfield"
+  # OpenID Connect client credentials authentication
+  clientId:
+  # The client secret should be specified via an env. variable COGNITE_CLIENTSECRET
+  clientSecret:
+  azureADTenantId:
+  scopes:
+    - "https://api.cognitedata.com/.default"
+
+# The CDF Raw source configuration
+source:
+  rawDb: "met"
+  rawTable: "met-alerts-rss-items"
+
+# Target data set and extraction pipelines
+target:
+  rawDb: "met"
+  rawTable: "met-alerts-cap-items"
+  extractionPipelineExternalId:
+
+# Default configuration for metrics.
+metrics:
+  enable: false
+  jobName: "met-alerts-cap-extractor"
+  pushGateway:
+    url: "http://stable-prometheus-pushgateway.internal-services:9091"

@@ -1,0 +1,31 @@
+# Builds 
+name: java-maven-skaffold-build
+on:
+  workflow_call:
+    inputs:
+      repositoryFolder: 
+        description: "The code repository folder to build. '.' for the root folder, './folder1/mavenRoot/' for a sub-folder"
+        default: '.'
+        required: false
+        type: string
+      javaVersion:
+        description: 'The Java version to build and deploy. Default is Java17'
+        default: '17'
+        required: false
+        type: string
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Set up JDK ${{ inputs.javaVersion }}
+        uses: actions/setup-java@v2
+        with:
+          java-version: ${{ inputs.javaVersion }}
+          distribution: 'temurin'
+      - name: Build image with Skaffold
+        uses: hiberbee/github-action-skaffold@1.23.0
+        with:
+          working-directory: ${{ inputs.repostoryFolder }}
+          command: build
+          push: false
