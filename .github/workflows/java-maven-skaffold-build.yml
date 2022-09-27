@@ -26,5 +26,6 @@ jobs:
       - name: Build image with Skaffold
         uses: hiberbee/github-action-skaffold@1.23.0
         with:
+          working-directory: ${{ inputs.repostoryFolder }}
           command: build
           push: false
