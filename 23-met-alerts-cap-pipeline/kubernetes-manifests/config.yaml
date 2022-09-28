@@ -29,7 +29,7 @@ source:
 
 # (Optional) Target data set and extraction pipelines
 target:
-  dataSetExternalId:
+  dataSetExternalId: "ds:src002:met"
   extractionPipelineExternalId: "ep:met-alerts-pipeline"
 
 # Configuration for metrics.
