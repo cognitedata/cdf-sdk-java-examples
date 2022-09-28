@@ -3,6 +3,7 @@ package com.cognite.examples;
 import com.cognite.client.CogniteClient;
 import com.cognite.client.config.TokenUrl;
 import com.cognite.client.dto.*;
+import com.cognite.client.queue.UploadQueue;
 import com.cognite.client.util.ParseValue;
 import com.google.common.collect.ImmutableList;
 import com.google.protobuf.Value;
@@ -75,6 +76,8 @@ public class RawToClean {
     private static final CollectorRegistry collectorRegistry = new CollectorRegistry();
     private static final Gauge jobDurationSeconds = Gauge.build()
             .name("job_duration_seconds").help("Job duration in seconds").register(collectorRegistry);
+    private static final Gauge jobStartTimeStamp = Gauge.build()
+            .name("job_start_timestamp").help("Job start timestamp").register(collectorRegistry);
     private static final Gauge errorGauge = Gauge.build()
             .name("job_errors").help("Total job errors").register(collectorRegistry);
     private static final Gauge noElementsGauge = Gauge.build()
@@ -128,12 +131,18 @@ public class RawToClean {
 
         // Prepare the job duration metrics
         Gauge.Timer jobDurationTimer = jobDurationSeconds.startTimer();
+        jobStartTimeStamp.setToCurrentTime();
 
         // Set up the reader for the raw table
         LOG.info("Starting to read the raw table {}.{}.",
                 rawDb,
                 rawTable);
         Iterator<List<RawRow>> rawResultsIterator = getCogniteClient().raw().rows().list(rawDb, rawTable);
+
+        // Start the events upload queue
+        UploadQueue<Event, Event> eventEventUploadQueue = getCogniteClient().events().uploadQueue()
+                .withExceptionHandlerFunction(exception -> {throw new RuntimeException(exception);});
+        eventEventUploadQueue.start();
 
         // Iterate through all rows in batches and write to clean. This will effectively "stream" through
         // the data so that we have ~constant memory usage no matter how large the data set is.
@@ -143,8 +152,8 @@ public class RawToClean {
 
             // Iterate through the individual rows in a single results batch and parse them to events.
             for (RawRow row : rawResultsIterator.next()) {
-                Event event = parseRawRowToEvent(row);
-                events.add(event);
+                eventEventUploadQueue.put(parseRawRowToEvent(row));
+
             }
 
             // Upsert a batch of results to CDF
@@ -152,6 +161,10 @@ public class RawToClean {
             noElementsGauge.inc(events.size());
         }
 
+        // Stop the upload queue. This will also perform a final upload.
+        eventEventUploadQueue.stop();
+
+        // All done
         jobDurationTimer.setDuration();
         LOG.info("Finished processing {} rows from raw. Duration {}",
                 noElementsGauge.get(),

@@ -3,6 +3,9 @@ package com.cognite.met;
 import com.cognite.client.CogniteClient;
 import com.cognite.client.config.TokenUrl;
 import com.cognite.client.dto.*;
+import com.cognite.client.queue.UploadQueue;
+import com.cognite.client.statestore.RawStateStore;
+import com.cognite.client.statestore.StateStore;
 import com.cognite.client.util.ParseValue;
 import com.google.common.collect.ImmutableList;
 import com.google.protobuf.Value;
@@ -84,8 +87,25 @@ public class MetAlertsPipeline {
     private static final Gauge noElementsContextualizedGauge = Gauge.build()
             .name("job_no_elements_contextualized").help("Number of contextualized elements").register(collectorRegistry);
 
+    /*
+    State store configuration. From config file
+     */
+    private static final Optional<String> stateStoreDb =
+            ConfigProvider.getConfig().getOptionalValue("stateStore.raw.database", String.class);
+    private static final Optional<String> stateStoreTable =
+            ConfigProvider.getConfig().getOptionalValue("stateStore.raw.table", String.class);
+    private static final Optional<String> stateStoreSaveInterval =
+            ConfigProvider.getConfig().getOptionalValue("stateStore.raw.saveInterval", String.class);
+
+    /*
+    Configuration settings--not from file
+     */
+    private static final String stateStoreExtId = "statestore:met-alerts-pipeline";
+    private static final String lastUpdatedTimeKey = "source:lastUpdatedTime";
+
     // global data structures
     private static CogniteClient cogniteClient;
+    private static RawStateStore rawStateStore;
     private static OptionalLong dataSetIntId;
     private static Map<String, Long> assetLookupMap;
 
@@ -127,7 +147,7 @@ public class MetAlertsPipeline {
      */
     private static void run() throws Exception {
         Instant startInstant = Instant.now();
-        LOG.info("Starting raw to clean pipeline...");
+        LOG.info("Starting Met alerts pipeline...");
 
         // Prepare the job start metrics
         Gauge.Timer jobDurationTimer = jobDurationSeconds.startTimer();
@@ -138,6 +158,11 @@ public class MetAlertsPipeline {
                 rawDb,
                 rawTable);
         Iterator<List<RawRow>> rawResultsIterator = getCogniteClient().raw().rows().list(rawDb, rawTable);
+
+        // Start the events upload queue
+        UploadQueue<Event, Event> eventEventUploadQueue = getCogniteClient().events().uploadQueue()
+                .withExceptionHandlerFunction(exception -> {throw new RuntimeException(exception);});
+        eventEventUploadQueue.start();
 
         // Iterate through all rows in batches and write to clean. This will effectively "stream" through
         // the data so that we have ~constant memory usage no matter how large the data set is.
@@ -156,10 +181,14 @@ public class MetAlertsPipeline {
             noElementsGauge.inc(events.size());
         }
 
+        // Stop the upload queue. This will also perform a final upload.
+        eventEventUploadQueue.stop();
+
+        // All done
+        jobDurationTimer.setDuration();
         LOG.info("Finished processing {} rows from raw. Duration {}",
                 noElementsGauge.get(),
-                Duration.between(startInstant, Instant.now()));
-        jobDurationTimer.setDuration();
+                Duration.ofSeconds((long) jobDurationSeconds.get()));
 
         // The job completion metric is only added to the registry after job success,
         // so that a previous success in the Pushgateway isn't overwritten on failure.
@@ -348,6 +377,43 @@ public class MetAlertsPipeline {
     }
 
     /*
+    The post upload function. Will update the elements counter and update the state store (if configured)
+    with the last updated time of the source.
+     */
+    private static void postUpload(List<RawRow> rawRows) {
+        String loggingPrefix = "postUpload() -";
+        if (rawRows.isEmpty()) {
+            LOG.info(loggingPrefix + "No rows posted to Raw--will skip updating the state store.");
+            return;
+        }
+        LOG.debug(loggingPrefix + "Submitted {} raw rows to CDF.", rawRows.size());
+        LOG.debug(loggingPrefix + "Last updated time profile for first 5 rows: {}",
+                rawRows.stream()
+                        .limit(5)
+                        .map(rawRow -> String.format("Key: %s - Last updated timestamp: %s",
+                                rawRow.getKey(),
+                                rawRow.getColumns().getFieldsOrDefault(lastUpdatedTimeKey, Values.ofNull())))
+                        .toList());
+
+        // Update the output elements counter
+        noElementsGauge.inc(rawRows.size());
+
+        // Find the most recent updated timestamp
+        long lastUpdatedTime = rawRows.stream()
+                .map(rawRow -> rawRow.getColumns().getFieldsOrDefault(lastUpdatedTimeKey, Values.of(0L)))
+                .map(value -> value.getNumberValue())
+                .mapToLong(number -> Math.round(number))
+                .max()
+                .orElse(0L);
+        try {
+            getStateStore().ifPresent(stateStore -> stateStore.expandHigh(stateStoreExtId, lastUpdatedTime));
+            LOG.info("postUpload() - Posting to state store: {} - {}.", stateStoreExtId, lastUpdatedTime);
+        } catch (Exception e) {
+            LOG.warn("postUpload() - Unable to update the state store: {}", e.toString());
+        }
+    }
+
+    /*
     Return the Cognite client.
 
     If the client isn't instantiated, it will be created according to the configured authentication options. After the
@@ -366,6 +432,27 @@ public class MetAlertsPipeline {
         }
 
         return cogniteClient;
+    }
+
+    /*
+    Return the state store (if configured)
+     */
+    private static Optional<StateStore> getStateStore() throws Exception {
+        if (null == rawStateStore) {
+            // Check if we have a state store config and instantiate the state store
+            if (stateStoreDb.isPresent() && stateStoreTable.isPresent()) {
+                LOG.info("State store defined in the configuration. Setting up Raw state store for {}.{}",
+                        stateStoreDb.get(),
+                        stateStoreTable.get());
+                rawStateStore = RawStateStore.of(getCogniteClient(), stateStoreDb.get(), stateStoreTable.get());
+                if (stateStoreSaveInterval.isPresent()) {
+                    rawStateStore = rawStateStore
+                            .withMaxCommitInterval(Duration.ofSeconds(Long.parseLong(stateStoreSaveInterval.get())));
+                }
+            }
+        }
+
+        return Optional.ofNullable(rawStateStore);
     }
 
     /*
