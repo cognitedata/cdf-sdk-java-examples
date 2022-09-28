@@ -1,24 +1,24 @@
 ## Met Alerts RSS extractor
 
-afgsdgfsdgf. It uses the practices of logging, monitoring, configuration presented in [1-k8-demo](../1-k8-demo/README.md).
+ Met alerts are weather forecast alerts issued by the Norwegian Meteorological Institute. The alerts are published via an RSS feed which again links to a separate URI which carries the alert content. The Met alerts RSS extractor reads the RSS feed and store the items in CDF Raw.
+ 
+ It uses the practices of logging, monitoring, configuration presented in [1-k8-demo](../1-k8-demo/README.md).
+
+ The Met alerts api: [https://api.met.no/weatherapi/metalerts/1.1/documentation](https://api.met.no/weatherapi/metalerts/1.1/documentation)
 
 The data pipeline performs the following tasks:
-1) Read the main input from a `CDF.Raw` table.
-2) Parse the data input to the `CDF Event` type.
-3) Read `CDF Assets` for contextualization lookup.
-4) Link the events to assets.
-5) Write the result to `CDF Events`.
-6) Report status to `extraction pipelines`.
+1) Read the RSS feed from `https://api.met.no/weatherapi/metalerts/1.1/`.
+2) Parse the data input to a `CDF Raw Row`.
+3) Write the results to a `CDF.Raw` table.
+4) Report status to `extraction pipelines`.
 
 ```mermaid
 flowchart LR
-    A[(Raw)] -->|read| B(Data Pipeline)
-    subgraph CDF.clean
-        C[Event]
-        D[Asset]
+     A{{Met Alerts RSS}} -->|read| B(RSS Extractor)
+    subgraph CDF.Raw
+        C[(Met.rss)]
     end
     B -->|write| C
-    D -->|read| B
 ```
 
 Design patterns to make note of:
@@ -36,12 +36,12 @@ The minimum requirements for running the module locally:
 
 On Linux/MaxOS:
 ```console
-$ mvn compile exec:java -Dexec.mainClass="com.cognite.examples.RawToClean"
+$ mvn compile exec:java -Dexec.mainClass="com.cognite.met.AlertsRssExtractor"
 ```
 
 On Windows Powershell:
 ```ps
-> mvn compile exec:java -D exec.mainClass="com.cognite.examples.RawToClean"
+> mvn compile exec:java -D exec.mainClass="com.cognite.met.AlertsRssExtractor"
 ```
 
 ### Run as a container on Kubernetes
