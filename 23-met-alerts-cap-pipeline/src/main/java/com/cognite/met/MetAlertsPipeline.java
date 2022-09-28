@@ -380,29 +380,28 @@ public class MetAlertsPipeline {
     The post upload function. Will update the elements counter and update the state store (if configured)
     with the last updated time of the source.
      */
-    private static void postUpload(List<RawRow> rawRows) {
+    private static void postUpload(List<Event> events) {
         String loggingPrefix = "postUpload() -";
-        if (rawRows.isEmpty()) {
-            LOG.info(loggingPrefix + "No rows posted to Raw--will skip updating the state store.");
+        if (events.isEmpty()) {
+            LOG.info(loggingPrefix + "No events posted to CDF--will skip updating the state store.");
             return;
         }
-        LOG.debug(loggingPrefix + "Submitted {} raw rows to CDF.", rawRows.size());
-        LOG.debug(loggingPrefix + "Last updated time profile for first 5 rows: {}",
-                rawRows.stream()
+        LOG.debug(loggingPrefix + "Submitted {} events to CDF.", events.size());
+        LOG.debug(loggingPrefix + "Last updated time profile for first 5 events: {}",
+                events.stream()
                         .limit(5)
-                        .map(rawRow -> String.format("Key: %s - Last updated timestamp: %s",
-                                rawRow.getKey(),
-                                rawRow.getColumns().getFieldsOrDefault(lastUpdatedTimeKey, Values.ofNull())))
+                        .map(event -> String.format("Key: %s - Last updated timestamp: %s",
+                                event.getExternalId(),
+                                event.getMetadataOrDefault(lastUpdatedTimeKey, "Null")))
                         .toList());
 
         // Update the output elements counter
-        noElementsGauge.inc(rawRows.size());
+        noElementsGauge.inc(events.size());
 
         // Find the most recent updated timestamp
-        long lastUpdatedTime = rawRows.stream()
-                .map(rawRow -> rawRow.getColumns().getFieldsOrDefault(lastUpdatedTimeKey, Values.of(0L)))
-                .map(value -> value.getNumberValue())
-                .mapToLong(number -> Math.round(number))
+        long lastUpdatedTime = events.stream()
+                .map(event -> event.getMetadataOrDefault(lastUpdatedTimeKey, "0"))
+                .mapToLong(Long::parseLong)
                 .max()
                 .orElse(0L);
         try {
