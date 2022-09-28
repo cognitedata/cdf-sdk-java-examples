@@ -8,7 +8,7 @@ cognite:
   host: "https://greenfield.cognitedata.com"
 
   # CDF project
-  project: kjetilh-greenfield
+  project:
 
   # Api key authentication. You can also specify this entry via an env. variable COGNITE_APIKEY
   apiKey:
@@ -30,7 +30,7 @@ source:
 # (Optional) Target data set and extraction pipelines
 target:
   dataSetExternalId:
-  extractionPipelineExternalId:
+  extractionPipelineExternalId: "ep:met-alerts-pipeline"
 
 # Configuration for metrics.
 metrics:

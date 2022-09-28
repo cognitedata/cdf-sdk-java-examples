@@ -3,16 +3,19 @@
 
 # Information about the Cognite Data Fusion (CDF) project
 cognite:
+  # (Optional) CDF deployment target
   #host: "https://api.cognitedata.com"
   host: "https://greenfield.cognitedata.com"
-
   # CDF project
-  project: "kjetilh-greenfield"
+  project:
+  # Api key authentication. You can also specify this entry via an env. variable COGNITE_APIKEY
+  apiKey:
   # OpenID Connect client credentials authentication
   clientId:
   # The client secret should be specified via an env. variable COGNITE_CLIENTSECRET
   clientSecret:
   azureADTenantId:
+  # (Optional) Authentication scopes
   scopes:
     - "https://api.cognitedata.com/.default"
 
@@ -24,7 +27,7 @@ source:
 target:
   rawDb: "met"
   rawTable: "met-alerts-rss-items"
-  extractionPipelineExternalId:
+  extractionPipelineExternalId: "ep:met-alerts-rss-extractor"
 
 # Configuration for metrics.
 metrics:
