@@ -101,8 +101,8 @@ public class RawToClean {
             if (extractionPipelineExtId.isPresent()) {
                 writeExtractionPipelineRun(ExtractionPipelineRun.Status.SUCCESS,
                         String.format("Upserted %d events to CDF. %d events could be linked to assets.",
-                                noElementsGauge.get(),
-                                noElementsContextualizedGauge.get()));
+                                (int) noElementsGauge.get(),
+                                (int) noElementsContextualizedGauge.get()));
             }
         } catch (Exception e) {
             LOG.error("Unrecoverable error. Will exit. {}", e.toString());
