@@ -30,14 +30,12 @@ public class RawToClean {
             ConfigProvider.getConfig().getValue("cognite.host", String.class);
     private static final String cdfProject =
             ConfigProvider.getConfig().getValue("cognite.project", String.class);
-    private static final Optional<String> apiKey =
-            ConfigProvider.getConfig().getOptionalValue("cognite.apiKey", String.class);
-    private static final Optional<String> clientId =
-            ConfigProvider.getConfig().getOptionalValue("cognite.clientId", String.class);
-    private static final Optional<String> clientSecret =
-            ConfigProvider.getConfig().getOptionalValue("cognite.clientSecret", String.class);
-    private static final Optional<String> aadTenantId =
-            ConfigProvider.getConfig().getOptionalValue("cognite.azureADTenantId", String.class);
+    private static final String clientId =
+            ConfigProvider.getConfig().getValue("cognite.clientId", String.class);
+    private static final String clientSecret =
+            ConfigProvider.getConfig().getValue("cognite.clientSecret", String.class);
+    private static final String aadTenantId =
+            ConfigProvider.getConfig().getValue("cognite.azureADTenantId", String.class);
     private static final String[] authScopes =
             ConfigProvider.getConfig().getValue("cognite.scopes", String[].class);
 
@@ -355,23 +353,13 @@ public class RawToClean {
     private static CogniteClient getCogniteClient() throws Exception {
         if (null == cogniteClient) {
             // The client has not been instantiated yet
-            if (clientId.isPresent() && clientSecret.isPresent() && aadTenantId.isPresent()) {
-                cogniteClient = CogniteClient.ofClientCredentials(
-                                clientId.get(),
-                                clientSecret.get(),
-                                TokenUrl.generateAzureAdURL(aadTenantId.get()),
-                                Arrays.asList(authScopes))
-                        .withProject(cdfProject)
-                        .withBaseUrl(cdfHost);
-            } else if (apiKey.isPresent()) {
-                cogniteClient = CogniteClient.ofKey(apiKey.get())
-                        .withProject(cdfProject)
-                        .withBaseUrl(cdfHost);
-            } else {
-                String message = "Unable to instantiate the Cognite Client. No valid authentication configuration.";
-                LOG.error(message);
-                throw new Exception(message);
-            }
+            cogniteClient = CogniteClient.ofClientCredentials(
+                            clientId,
+                            clientSecret,
+                            TokenUrl.generateAzureAdURL(aadTenantId),
+                            Arrays.asList(authScopes))
+                    .withProject(cdfProject)
+                    .withBaseUrl(cdfHost);
         }
 
         return cogniteClient;

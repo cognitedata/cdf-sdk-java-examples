@@ -37,12 +37,12 @@ The minimum requirements for running the module locally:
 
 On Linux/MaxOS:
 ```console
-$ mvn compile exec:java -Dexec.mainClass="com.cognite.examples.RawToClean"
+$ mvn compile exec:java -Dexec.mainClass="com.cognite.met.MetAlertsPipeline"
 ```
 
 On Windows Powershell:
 ```ps
-> mvn compile exec:java -D exec.mainClass="com.cognite.examples.RawToClean"
+> mvn compile exec:java -D exec.mainClass="com.cognite.met.MetAlertsPipeline"
 ```
 
 ### Run as a container on Kubernetes
