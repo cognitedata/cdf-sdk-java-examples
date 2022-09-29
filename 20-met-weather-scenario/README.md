@@ -4,6 +4,22 @@ The Met weather scenario integrates weather observations and forecasts with Cogn
 - Locations
 - Met alerts
 
+The scenario convers extractors, data pipelines and contextualization logic to produce the weather data product. All components are implemented as containers using good practices with configurability, metrics, logging, delta-loading and more.
+
+### Prerequisites
+
+To run this scenario you need a CDF project you can write data to. More specifically, you need:
+- An OIDC user principal, including `client id`, `client secret` and `AAD tenant id`.
+- Read and write access to one (preferrably two) `CDF Raw databases`.
+- Read and write access to a CDF data set hosting `assets`, `events` and `time series`.
+- Optional: a CDF extraction pipeline object for each component.
+
+The modules themselves run on K8s:
+- Java 17 SDK: [https://adoptium.net/](https://adoptium.net/)
+- Maven: [https://maven.apache.org/download.cgi](https://maven.apache.org/download.cgi)
+- Skaffold: [https://github.com/GoogleContainerTools/skaffold/releases](https://github.com/GoogleContainerTools/skaffold/releases)
+- Local K8s with kubectl (Docker Desktop, Minikube, etc.)
+
 ### Locations
 
 Locations are metadata about geographic locations from the Met Frost API. They are modelled as CDF Assets and optional geographic features.
@@ -47,7 +63,7 @@ flowchart LR
         G[Events]
         H[Assets]
     end
-    D -->|read| I(Alerts pipeline)
+    D -->|read| I(Cap Alerts pipeline)
     I -->|write| G
     G -->|related to| H
 ```

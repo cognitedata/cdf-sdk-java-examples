@@ -2,6 +2,8 @@
 
 This repository hosts a set of examples on how to use the Cognite Java SDK to interact with Cognite Data Fusion. The examples demonstrate various patterns, from general techniques like how to implement configurability, how to add monitoring to more specific patterns on how to build a streaming data pipeline and how to implement an interactive engineering diagram pipeline.
 
+There are two categories of examples: 1) templates illustrating a design pattern and 2) complete and runnable scenarios. The templates are "90% code complete", but need to be tailored to your specific input data. You can copy the templates and tweak them to your data. The scenarios, on the other hand, use publicly available data, are code complete and can be run as-is. 
+
 ## Examples
 - [01-k8-demo](./01-k8-demo/). Demonstrating how to set up configurability, monitoring, logging and building the container.
 - [02-raw-to-clean-batch-job](./02-raw-to-clean-batch-job/). Illustrates a batch data pipeline parsing data from CDF.Raw to CDF.Event with contextualization.
@@ -19,7 +21,7 @@ Minimum requirements for running the module on K8s:
 - Java 17 SDK: [https://adoptium.net/](https://adoptium.net/)
 - Maven: [https://maven.apache.org/download.cgi](https://maven.apache.org/download.cgi)
 - Skaffold: [https://github.com/GoogleContainerTools/skaffold/releases](https://github.com/GoogleContainerTools/skaffold/releases)
-- Local K8s with kubectl
+- Local K8s with kubectl (Docker Desktop, Minikube, etc.)
 
 Make sure your kube context points to the K8s cluster that you want to run the container on. For example, if you 
 have Docker desktop installed, you should see something like the following:
