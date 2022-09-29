@@ -31,8 +31,8 @@ stateStore:
 
 # Source raw db and table to read source data from.
 source:
-  rawDb: "sap-extract"
-  table: "notification"
+  rawDb: "met"
+  table: "met-alerts-cap-items"
 
 # (Optional) Target data set and extraction pipelines
 target:

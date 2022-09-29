@@ -193,7 +193,7 @@ public class RawToClean {
         final String extIdKey = "RawExtIdColumn";
         final String descriptionKey = "RawDescriptionColumn";
         final String startDateTimeKey = "RawStartDateTimeColumn";
-        final String endDataTimeKey = "RawEndDateTimeColumn";
+        final String endDateTimeKey = "RawEndDateTimeColumn";
 
         // Contextualization configuration
         final String assetReferenceKey = "RawAssetNameReferenceColumn";
@@ -239,8 +239,8 @@ public class RawToClean {
         if (columnsMap.containsKey(startDateTimeKey) && columnsMap.get(startDateTimeKey).hasNumberValue()) {
             eventBuilder.setStartTime((long) columnsMap.get(startDateTimeKey).getNumberValue());
         }
-        if (columnsMap.containsKey(endDataTimeKey) && columnsMap.get(endDataTimeKey).hasNumberValue()) {
-            eventBuilder.setEndTime((long) columnsMap.get(endDataTimeKey).getNumberValue());
+        if (columnsMap.containsKey(endDateTimeKey) && columnsMap.get(endDateTimeKey).hasNumberValue()) {
+            eventBuilder.setEndTime((long) columnsMap.get(endDateTimeKey).getNumberValue());
         }
 
         // Add fixed values
@@ -256,16 +256,14 @@ public class RawToClean {
                 .collect(Collectors.toMap(Map.Entry::getKey, entry -> ParseValue.parseString(entry.getValue())));
 
         // Add basic lineage info
-        metadata.put("dataSource",
+        metadata.put("upstreamDataSource",
                 String.format("CDF Raw: %s.%s.%s", row.getDbName(), row.getTableName(), row.getKey()));
 
         // Don't forget to add the metadata to the event object
         eventBuilder.putAllMetadata(metadata);
 
         // If a target dataset has been configured, add it to the event object
-        if (getDataSetIntId().isPresent()) {
-            eventBuilder.setDataSetId(dataSetIntId.getAsLong());
-        }
+        getDataSetIntId().ifPresent(intId -> eventBuilder.setDataSetId(intId));
 
         /*
         Contextualization.

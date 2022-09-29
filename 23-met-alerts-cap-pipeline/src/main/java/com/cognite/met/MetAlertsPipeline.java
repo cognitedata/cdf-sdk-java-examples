@@ -12,7 +12,6 @@ import com.google.protobuf.Value;
 import com.google.protobuf.util.Values;
 import io.prometheus.client.CollectorRegistry;
 import io.prometheus.client.Gauge;
-import io.prometheus.client.SimpleTimer;
 import io.prometheus.client.exporter.PushGateway;
 import org.eclipse.microprofile.config.ConfigProvider;
 import org.slf4j.Logger;
@@ -21,6 +20,7 @@ import org.slf4j.LoggerFactory;
 import java.net.URL;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -212,7 +212,7 @@ public class MetAlertsPipeline {
         // These raw columns map to the event schema fields
         final List<String> descriptionKeys = List.of("headline","description");
         final String startDateTimeKey = "effective";
-        final String endDataTimeKey = "expires";
+        final String endDateTimeKey = "expires";
         final String subtypeKey = "event";
 
         // Contextualization configuration
@@ -226,7 +226,7 @@ public class MetAlertsPipeline {
         // Include / exclude columns
         // For filtering the entries to the metadata bucket
         //final String excludeColumnPrefix = "exclude__";
-        //List<String> excludeColumns = List.of("exclude-column-a", "exclude-column-b", "exclude-column-c");
+        List<String> excludeColumns = List.of();
 
         /*
         The parsing logic.
@@ -238,52 +238,56 @@ public class MetAlertsPipeline {
         // Add the mandatory fields
         // If a mandatory field is missing, you should flag it and handle that record specifically. Either by failing
         // the entire job, or putting the failed records in a "dead letter queue".
-        if (columnsMap.containsKey(descriptionKey) && columnsMap.get(descriptionKey).hasStringValue()) {
-            eventBuilder.setDescription(columnsMap.get(descriptionKey).getStringValue());
-        } else {
-            String message = String.format(loggingPrefix + "Could not parse field [%s].",
-                    descriptionKey);
-            LOG.error(message);
-            throw new Exception(message);
-        }
+
 
         // Add optional fields. If an optional field is missing, no need to take any action (usually)
-        if (columnsMap.containsKey(startDateTimeKey) && columnsMap.get(startDateTimeKey).hasNumberValue()) {
-            eventBuilder.setStartTime((long) columnsMap.get(startDateTimeKey).getNumberValue());
+        List<String> descriptionElements = descriptionKeys.stream()
+                .map(key -> columnsMap.getOrDefault(key, Values.of("")).getStringValue())
+                .toList();
+        if (descriptionElements.size() > 0) {
+            eventBuilder.setDescription(String.join(" - ", descriptionElements));
         }
-        if (columnsMap.containsKey(endDataTimeKey) && columnsMap.get(endDataTimeKey).hasNumberValue()) {
-            eventBuilder.setEndTime((long) columnsMap.get(endDataTimeKey).getNumberValue());
+        if (columnsMap.containsKey(startDateTimeKey) && columnsMap.get(startDateTimeKey).hasStringValue()) {
+            eventBuilder.setStartTime(
+                    OffsetDateTime.parse(columnsMap.get(startDateTimeKey).getStringValue()).toInstant().toEpochMilli()
+            );
+        }
+        if (columnsMap.containsKey(endDateTimeKey) && columnsMap.get(endDateTimeKey).hasStringValue()) {
+            eventBuilder.setEndTime(
+                    OffsetDateTime.parse(columnsMap.get(endDateTimeKey).getStringValue()).toInstant().toEpochMilli()
+            );
+        }
+        if (columnsMap.containsKey(subtypeKey) && columnsMap.get(subtypeKey).hasStringValue()) {
+            eventBuilder.setSubtype(columnsMap.get(subtypeKey).getStringValue());
         }
 
         // Add fixed values
         eventBuilder
                 .setSource(sourceValue)
-                .setType(typeValue)
-                .setSubtype(subtypeValue);
+                .setType(typeValue);
 
         // Add fields to metadata based on the exclusion filters
         Map<String, String> metadata = columnsMap.entrySet().stream()
-                .filter(entry -> !entry.getKey().startsWith(excludeColumnPrefix))
+                //.filter(entry -> !entry.getKey().startsWith(excludeColumnPrefix))
                 .filter(entry -> !excludeColumns.contains(entry.getKey()))
                 .collect(Collectors.toMap(Map.Entry::getKey, entry -> ParseValue.parseString(entry.getValue())));
 
         // Add basic lineage info
-        metadata.put("dataSource",
+        metadata.put("upstreamDataSource",
                 String.format("CDF Raw: %s.%s.%s", row.getDbName(), row.getTableName(), row.getKey()));
 
         // Don't forget to add the metadata to the event object
         eventBuilder.putAllMetadata(metadata);
 
         // If a target dataset has been configured, add it to the event object
-        if (getDataSetIntId().isPresent()) {
-            eventBuilder.setDataSetId(dataSetIntId.getAsLong());
-        }
+        getDataSetIntId().ifPresent(intId -> eventBuilder.setDataSetId(intId));
 
         /*
         Contextualization.
         - Do a pure name-based, exact match asset lookup.
         - Log a successful contextualization operation as a metric.
          */
+        /*
         if (columnsMap.containsKey(assetReferenceKey)
                 && columnsMap.get(assetReferenceKey).hasStringValue()
                 && getAssetLookupMap().containsKey(columnsMap.get(assetReferenceKey).getStringValue())) {
@@ -294,6 +298,8 @@ public class MetAlertsPipeline {
                     assetReferenceKey,
                     columnsMap.getOrDefault(assetReferenceKey, Values.of("null")));
         }
+
+         */
 
         // Build the event object
         return eventBuilder.build();
