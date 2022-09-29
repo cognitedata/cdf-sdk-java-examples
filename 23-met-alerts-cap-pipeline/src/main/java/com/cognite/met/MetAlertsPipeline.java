@@ -12,6 +12,7 @@ import com.google.protobuf.Value;
 import com.google.protobuf.util.Values;
 import io.prometheus.client.CollectorRegistry;
 import io.prometheus.client.Gauge;
+import io.prometheus.client.SimpleTimer;
 import io.prometheus.client.exporter.PushGateway;
 import org.eclipse.microprofile.config.ConfigProvider;
 import org.slf4j.Logger;
@@ -146,7 +147,6 @@ public class MetAlertsPipeline {
     The main logic to execute.
      */
     private static void run() throws Exception {
-        Instant startInstant = Instant.now();
         LOG.info("Starting Met alerts pipeline...");
 
         // Prepare the job start metrics
@@ -161,6 +161,7 @@ public class MetAlertsPipeline {
 
         // Start the events upload queue
         UploadQueue<Event, Event> eventEventUploadQueue = getCogniteClient().events().uploadQueue()
+                .withPostUploadFunction(MetAlertsPipeline::postUpload)
                 .withExceptionHandlerFunction(exception -> {throw new RuntimeException(exception);});
         eventEventUploadQueue.start();
 
@@ -209,42 +210,34 @@ public class MetAlertsPipeline {
          */
         // Key columns
         // These raw columns map to the event schema fields
-        final String extIdKey = "RawExtIdColumn";
-        final String descriptionKey = "RawDescriptionColumn";
-        final String startDateTimeKey = "RawStartDateTimeColumn";
-        final String endDataTimeKey = "RawEndDateTimeColumn";
+        final List<String> descriptionKeys = List.of("headline","description");
+        final String startDateTimeKey = "effective";
+        final String endDataTimeKey = "expires";
+        final String subtypeKey = "event";
 
         // Contextualization configuration
-        final String assetReferenceKey = "RawAssetNameReferenceColumn";
+        //final String assetReferenceKey = "RawAssetNameReferenceColumn";
 
         // Fixed values
         // Hardcoded values to add to the event schema fields
-        final String typeValue = "event-type";
-        final String subtypeValue = "event-subtype";
-        final String sourceValue = "data-source-name";
+        final String typeValue = "Met Alert";
+        final String sourceValue = "Met Norway";
 
         // Include / exclude columns
         // For filtering the entries to the metadata bucket
-        final String excludeColumnPrefix = "exclude__";
-        List<String> excludeColumns = List.of("exclude-column-a", "exclude-column-b", "exclude-column-c");
+        //final String excludeColumnPrefix = "exclude__";
+        //List<String> excludeColumns = List.of("exclude-column-a", "exclude-column-b", "exclude-column-c");
 
         /*
         The parsing logic.
          */
-        Event.Builder eventBuilder = Event.newBuilder();
+        Event.Builder eventBuilder = Event.newBuilder()
+                .setExternalId(row.getKey());
         Map<String, Value> columnsMap = row.getColumns().getFieldsMap();
 
         // Add the mandatory fields
         // If a mandatory field is missing, you should flag it and handle that record specifically. Either by failing
         // the entire job, or putting the failed records in a "dead letter queue".
-        if (columnsMap.containsKey(extIdKey) && columnsMap.get(extIdKey).hasStringValue()) {
-            eventBuilder.setExternalId(extIdPrefix + columnsMap.get(extIdKey).getStringValue());
-        } else {
-            String message = String.format(loggingPrefix + "Could not parse field [%s].",
-                    extIdKey);
-            LOG.error(message);
-            throw new Exception(message);
-        }
         if (columnsMap.containsKey(descriptionKey) && columnsMap.get(descriptionKey).hasStringValue()) {
             eventBuilder.setDescription(columnsMap.get(descriptionKey).getStringValue());
         } else {
@@ -405,8 +398,10 @@ public class MetAlertsPipeline {
                 .max()
                 .orElse(0L);
         try {
-            getStateStore().ifPresent(stateStore -> stateStore.expandHigh(stateStoreExtId, lastUpdatedTime));
-            LOG.info("postUpload() - Posting to state store: {} - {}.", stateStoreExtId, lastUpdatedTime);
+            getStateStore().ifPresent(stateStore -> {
+                stateStore.expandHigh(stateStoreExtId, lastUpdatedTime);
+                LOG.info("postUpload() - Posting to state store: {} - {}.", stateStoreExtId, lastUpdatedTime);
+            });
         } catch (Exception e) {
             LOG.warn("postUpload() - Unable to update the state store: {}", e.toString());
         }

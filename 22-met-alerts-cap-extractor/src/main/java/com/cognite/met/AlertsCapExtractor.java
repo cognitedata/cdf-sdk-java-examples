@@ -361,8 +361,10 @@ public class AlertsCapExtractor {
                 .max()
                 .orElse(0L);
         try {
-            getStateStore().ifPresent(stateStore -> stateStore.expandHigh(stateStoreExtId, lastUpdatedTime));
-            LOG.info("postUpload() - Posting to state store: {} - {}.", stateStoreExtId, lastUpdatedTime);
+            getStateStore().ifPresent(stateStore -> {
+                stateStore.expandHigh(stateStoreExtId, lastUpdatedTime);
+                LOG.info("postUpload() - Posting to state store: {} - {}.", stateStoreExtId, lastUpdatedTime);
+            });
         } catch (Exception e) {
             LOG.warn("postUpload() - Unable to update the state store: {}", e.toString());
         }

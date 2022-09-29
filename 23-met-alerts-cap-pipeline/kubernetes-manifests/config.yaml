@@ -10,9 +10,6 @@ cognite:
   # CDF project
   project:
 
-  # Api key authentication. You can also specify this entry via an env. variable COGNITE_APIKEY
-  apiKey:
-
   # OpenID Connect client credentials authentication
   clientId:
   # The client secret should be specified via an env. variable COGNITE_CLIENTSECRET
@@ -21,6 +18,16 @@ cognite:
   # (Optional) Authentication scopes
   scopes:
     - "https://api.cognitedata.com/.default"
+
+# State store configuration
+stateStore:
+  #  local:
+  #    path: "./statestore.json"
+  #    saveInterval: 30
+  raw:
+    database: "met-system"
+    table: "statestore-cap-pipeline"
+    saveInterval: 30
 
 # Source raw db and table to read source data from.
 source:
