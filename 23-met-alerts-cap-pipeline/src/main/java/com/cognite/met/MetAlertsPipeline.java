@@ -1,7 +1,9 @@
 package com.cognite.met;
 
 import com.cognite.client.CogniteClient;
+import com.cognite.client.config.ClientConfig;
 import com.cognite.client.config.TokenUrl;
+import com.cognite.client.config.UpsertMode;
 import com.cognite.client.dto.*;
 import com.cognite.client.queue.UploadQueue;
 import com.cognite.client.statestore.RawStateStore;
@@ -102,7 +104,7 @@ public class MetAlertsPipeline {
     Configuration settings--not from file
      */
     private static final String stateStoreExtId = "statestore:met-alerts-pipeline";
-    private static final String lastUpdatedTimeKey = "source:lastUpdatedTime";
+    private static final String lastUpdatedTimeMetadataKey = "source:lastUpdatedTime";
 
     // global data structures
     private static CogniteClient cogniteClient;
@@ -168,18 +170,11 @@ public class MetAlertsPipeline {
         // Iterate through all rows in batches and write to clean. This will effectively "stream" through
         // the data so that we have ~constant memory usage no matter how large the data set is.
         while (rawResultsIterator.hasNext()) {
-            // Temporary collection for hosting a single batch of parsed events.
-            List<Event> events = new ArrayList<>();
-
-            // Iterate through the individual rows in a single results batch and parse them to events.
+            // Iterate through the individual rows in a single results batch, parse them to events
+            // and add to the upload queue.
             for (RawRow row : rawResultsIterator.next()) {
-                Event event = parseRawRowToEvent(row);
-                events.add(event);
+                eventEventUploadQueue.put(parseRawRowToEvent(row));
             }
-
-            // Upsert a batch of results to CDF
-            getCogniteClient().events().upsert(events);
-            noElementsGauge.inc(events.size());
         }
 
         // Stop the upload queue. This will also perform a final upload.
@@ -273,8 +268,9 @@ public class MetAlertsPipeline {
                 .collect(Collectors.toMap(Map.Entry::getKey, entry -> ParseValue.parseString(entry.getValue())));
 
         // Add basic lineage info
-        metadata.put("upstreamDataSource",
+        metadata.put("source:upstreamDataSource",
                 String.format("CDF Raw: %s.%s.%s", row.getDbName(), row.getTableName(), row.getKey()));
+        metadata.put(lastUpdatedTimeMetadataKey, String.valueOf(row.getLastUpdatedTime()));
 
         // Don't forget to add the metadata to the event object
         eventBuilder.putAllMetadata(metadata);
@@ -382,7 +378,7 @@ public class MetAlertsPipeline {
     private static void postUpload(List<Event> events) {
         String loggingPrefix = "postUpload() -";
         if (events.isEmpty()) {
-            LOG.info(loggingPrefix + "No events posted to CDF--will skip updating the state store.");
+            LOG.info(loggingPrefix + "No events posted to CDF--will skip updating metrics and the state store.");
             return;
         }
         LOG.debug(loggingPrefix + "Submitted {} events to CDF.", events.size());
@@ -391,7 +387,7 @@ public class MetAlertsPipeline {
                         .limit(5)
                         .map(event -> String.format("Key: %s - Last updated timestamp: %s",
                                 event.getExternalId(),
-                                event.getMetadataOrDefault(lastUpdatedTimeKey, "Null")))
+                                event.getMetadataOrDefault(lastUpdatedTimeMetadataKey, "Null")))
                         .toList());
 
         // Update the output elements counter
@@ -399,7 +395,7 @@ public class MetAlertsPipeline {
 
         // Find the most recent updated timestamp
         long lastUpdatedTime = events.stream()
-                .map(event -> event.getMetadataOrDefault(lastUpdatedTimeKey, "0"))
+                .map(event -> event.getMetadataOrDefault(lastUpdatedTimeMetadataKey, "0"))
                 .mapToLong(Long::parseLong)
                 .max()
                 .orElse(0L);
@@ -422,13 +418,17 @@ public class MetAlertsPipeline {
     private static CogniteClient getCogniteClient() throws Exception {
         if (null == cogniteClient) {
             // The client has not been instantiated yet
+            ClientConfig clientConfig = ClientConfig.create()
+                    .withUpsertMode(UpsertMode.REPLACE);
+
             cogniteClient = CogniteClient.ofClientCredentials(
                             clientId,
                             clientSecret,
                             TokenUrl.generateAzureAdURL(aadTenantId),
                             Arrays.asList(authScopes))
                     .withProject(cdfProject)
-                    .withBaseUrl(cdfHost);
+                    .withBaseUrl(cdfHost)
+                    .withClientConfig(clientConfig);
         }
 
         return cogniteClient;

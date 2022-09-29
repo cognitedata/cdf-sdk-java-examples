@@ -4,6 +4,8 @@ import com.cognite.client.CogniteClient;
 import com.cognite.client.config.TokenUrl;
 import com.cognite.client.dto.*;
 import com.cognite.client.queue.UploadQueue;
+import com.cognite.client.statestore.RawStateStore;
+import com.cognite.client.statestore.StateStore;
 import com.cognite.client.util.ParseValue;
 import com.google.common.collect.ImmutableList;
 import com.google.protobuf.Value;
@@ -39,6 +41,16 @@ public class RawToClean {
             ConfigProvider.getConfig().getValue("cognite.azureADTenantId", String.class);
     private static final String[] authScopes =
             ConfigProvider.getConfig().getValue("cognite.scopes", String[].class);
+
+    /*
+    State store configuration. From config file
+     */
+    private static final Optional<String> stateStoreDb =
+            ConfigProvider.getConfig().getOptionalValue("stateStore.raw.database", String.class);
+    private static final Optional<String> stateStoreTable =
+            ConfigProvider.getConfig().getOptionalValue("stateStore.raw.table", String.class);
+    private static final Optional<String> stateStoreSaveInterval =
+            ConfigProvider.getConfig().getOptionalValue("stateStore.raw.saveInterval", String.class);
 
     /*
     CDF.Raw source table configuration. From config file / env variables.
@@ -85,8 +97,15 @@ public class RawToClean {
     private static final Gauge noElementsContextualizedGauge = Gauge.build()
             .name("job_no_elements_contextualized").help("Number of contextualized elements").register(collectorRegistry);
 
+    /*
+    Configuration settings--not from file
+     */
+    private static final String stateStoreExtId = "statestore:my-raw-to-clean-pipeline";
+    private static final String lastUpdatedTimeMetadataKey = "source:lastUpdatedTime";
+
     // global data structures
     private static CogniteClient cogniteClient;
+    private static RawStateStore rawStateStore;
     private static OptionalLong dataSetIntId;
     private static Map<String, Long> assetLookupMap;
 
@@ -150,15 +169,11 @@ public class RawToClean {
             // Temporary collection for hosting a single batch of parsed events.
             List<Event> events = new ArrayList<>();
 
-            // Iterate through the individual rows in a single results batch and parse them to events.
+            // Iterate through the individual rows in a single results batch, parse them to events
+            // and add to the upload queue.
             for (RawRow row : rawResultsIterator.next()) {
                 eventEventUploadQueue.put(parseRawRowToEvent(row));
-
             }
-
-            // Upsert a batch of results to CDF
-            getCogniteClient().events().upsert(events);
-            noElementsGauge.inc(events.size());
         }
 
         // Stop the upload queue. This will also perform a final upload.
@@ -256,8 +271,9 @@ public class RawToClean {
                 .collect(Collectors.toMap(Map.Entry::getKey, entry -> ParseValue.parseString(entry.getValue())));
 
         // Add basic lineage info
-        metadata.put("upstreamDataSource",
+        metadata.put("source:upstreamDataSource",
                 String.format("CDF Raw: %s.%s.%s", row.getDbName(), row.getTableName(), row.getKey()));
+        metadata.put(lastUpdatedTimeMetadataKey, String.valueOf(row.getLastUpdatedTime()));
 
         // Don't forget to add the metadata to the event object
         eventBuilder.putAllMetadata(metadata);
@@ -356,6 +372,44 @@ public class RawToClean {
     }
 
     /*
+    The post upload function. Will update the elements counter and update the state store (if configured)
+    with the last updated time of the source.
+     */
+    private static void postUpload(List<Event> events) {
+        String loggingPrefix = "postUpload() -";
+        if (events.isEmpty()) {
+            LOG.info(loggingPrefix + "No events posted to CDF--will skip updating metrics and the state store.");
+            return;
+        }
+        LOG.debug(loggingPrefix + "Submitted {} events to CDF.", events.size());
+        LOG.debug(loggingPrefix + "Last updated time profile for first 5 events: {}",
+                events.stream()
+                        .limit(5)
+                        .map(event -> String.format("Key: %s - Last updated timestamp: %s",
+                                event.getExternalId(),
+                                event.getMetadataOrDefault(lastUpdatedTimeMetadataKey, "Null")))
+                        .toList());
+
+        // Update the output elements counter
+        noElementsGauge.inc(events.size());
+
+        // Find the most recent updated timestamp
+        long lastUpdatedTime = events.stream()
+                .map(event -> event.getMetadataOrDefault(lastUpdatedTimeMetadataKey, "0"))
+                .mapToLong(Long::parseLong)
+                .max()
+                .orElse(0L);
+        try {
+            getStateStore().ifPresent(stateStore -> {
+                stateStore.expandHigh(stateStoreExtId, lastUpdatedTime);
+                LOG.info("postUpload() - Posting to state store: {} - {}.", stateStoreExtId, lastUpdatedTime);
+            });
+        } catch (Exception e) {
+            LOG.warn("postUpload() - Unable to update the state store: {}", e.toString());
+        }
+    }
+
+    /*
     Return the Cognite client.
 
     If the client isn't instantiated, it will be created according to the configured authentication options. After the
@@ -374,6 +428,27 @@ public class RawToClean {
         }
 
         return cogniteClient;
+    }
+
+    /*
+    Return the state store (if configured)
+     */
+    private static Optional<StateStore> getStateStore() throws Exception {
+        if (null == rawStateStore) {
+            // Check if we have a state store config and instantiate the state store
+            if (stateStoreDb.isPresent() && stateStoreTable.isPresent()) {
+                LOG.info("State store defined in the configuration. Setting up Raw state store for {}.{}",
+                        stateStoreDb.get(),
+                        stateStoreTable.get());
+                rawStateStore = RawStateStore.of(getCogniteClient(), stateStoreDb.get(), stateStoreTable.get());
+                if (stateStoreSaveInterval.isPresent()) {
+                    rawStateStore = rawStateStore
+                            .withMaxCommitInterval(Duration.ofSeconds(Long.parseLong(stateStoreSaveInterval.get())));
+                }
+            }
+        }
+
+        return Optional.ofNullable(rawStateStore);
     }
 
     /*
