@@ -90,7 +90,7 @@ public class AlertsRssExtractor {
             if (extractionPipelineExtId.isPresent()) {
                 writeExtractionPipelineRun(ExtractionPipelineRun.Status.SUCCESS,
                         String.format("Upserted %d RSS items to CDF Raw.",
-                                (int) noElementsGauge.get()));
+                                (long) noElementsGauge.get()));
             }
         } catch (Exception e) {
             LOG.error("Unrecoverable error. Will exit. {}", e.toString());

@@ -1,28 +1,34 @@
 ## Met Alerts CAP extractor
 
-afgsdgfsdgf. It uses the practices of logging, monitoring, configuration presented in [1-k8-demo](../1-k8-demo/README.md).
+Met alerts are weather forecast alerts issued by the Norwegian Meteorological Institute. The alerts are published via an RSS feed which again links to a separate URI which carries the alert content (CAP). The Met alerts CAP extractor reads the CAP data payload from CAP URIs (produced by the RSS extractor).
+
+ The extractor itself is as simple as it gets. It performs a full (source) read, pushes all items to CDF Raw and reports its status using metrics and `extraction pipelines`. The source data volume is very low (<100 items) so we don't need to take throttling or delta-load into account.
+ 
+ It uses the practices of logging, monitoring, configuration presented in [1-k8-demo](../1-k8-demo/README.md).
+
+ The Met alerts api: [https://api.met.no/weatherapi/metalerts/1.1/documentation](https://api.met.no/weatherapi/metalerts/1.1/documentation)
 
 The data pipeline performs the following tasks:
-1) Read the main input from a `CDF.Raw` table.
-2) Parse the data input to the `CDF Event` type.
-3) Read `CDF Assets` for contextualization lookup.
-4) Link the events to assets.
-5) Write the result to `CDF Events`.
-6) Report status to `extraction pipelines`.
+1) Read the CAP URIs from the `CDF Raw RSS table`.
+2) Visit the URIs and retrieve the CAP payload.
+2) Parse the CAP data to a `CDF Raw Row`.
+3) Write the results to a `CDF.Raw` table.
+4) Report status to `extraction pipelines`.
 
 ```mermaid
 flowchart LR
-    A[(Raw)] -->|read| B(Data Pipeline)
-    subgraph CDF.clean
-        C[Event]
-        D[Asset]
+    subgraph CDF.Raw
+        A[(Met.rss)]
+        B[(Met.cap)]
     end
-    B -->|write| C
-    D -->|read| B
+    A -->|read| C(Cap Extractor)
+    D{{Met Alerts Cap}} -->|read| C
+    C -->|write| B
 ```
 
 Design patterns to make note of:
-- 
+- Using the `upload queue` to optimize writing to Raw.
+- Using `state store` to perform delta loads.
 
 ## Quickstart
 
