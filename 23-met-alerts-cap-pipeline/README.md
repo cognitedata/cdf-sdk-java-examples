@@ -1,6 +1,10 @@
 ## CAP alerts, Raw to Clean pipeline
 
-This pipeline processes data from CDF Raw representing CAP met alerts. It uses the practices of logging, monitoring, configuration presented in [1-k8-demo](../1-k8-demo/README.md).
+This pipeline processes data from CDF Raw representing CAP met alerts. Met alerts are weather forecast alerts issued by the Norwegian Meteorological Institute. The raw CAP items are parsed into CDF Events and linked/contextualized to CDF Assets representing geographic locations.
+
+It uses the practices of logging, monitoring, configuration presented in [1-k8-demo](../1-k8-demo/README.md).
+
+ The Met alerts api: [https://api.met.no/weatherapi/metalerts/1.1/documentation](https://api.met.no/weatherapi/metalerts/1.1/documentation).
 
 The data pipeline performs the following tasks:
 1) Read the main input from a `CDF.Raw` table.
@@ -12,13 +16,26 @@ The data pipeline performs the following tasks:
 
 ```mermaid
 flowchart LR
-    A[(Raw)] -->|read| B(Data Pipeline)
-    subgraph CDF.clean
+    subgraph raw [CDF Raw]
+        1A[(Met.cap)]
+    end
+    subgraph cap [CAP Data Pipeline]
+        direction LR
+        2A(Read URIs)
+        2B(Read CAP)
+        2C(Parse CAP)
+        2D(Write)
+        2E(Report)
+        2A --> 2B --> 2C --> 2D
+        2D --> 2E
+    end
+    subgraph clean [CDF.clean]
         C[Event]
         D[Asset]
     end
-    B -->|write| C
-    D -->|read| B
+    1A --->|read CAP items| cap
+    cap -->|write| C
+    D -->|read| cap
 ```
 
 Design patterns to make note of:

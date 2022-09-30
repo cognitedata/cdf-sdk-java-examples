@@ -6,7 +6,7 @@ Met alerts are weather forecast alerts issued by the Norwegian Meteorological In
  
  It uses the practices of logging, monitoring, configuration presented in [1-k8-demo](../1-k8-demo/README.md).
 
- The Met alerts api: [https://api.met.no/weatherapi/metalerts/1.1/documentation](https://api.met.no/weatherapi/metalerts/1.1/documentation)
+ The Met alerts api: [https://api.met.no/weatherapi/metalerts/1.1/documentation](https://api.met.no/weatherapi/metalerts/1.1/documentation).
 
 The data pipeline performs the following tasks:
 1) Read the CAP URIs from the `CDF Raw RSS table`.
