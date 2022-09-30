@@ -21,21 +21,27 @@ flowchart LR
     end
     subgraph cap [CAP Data Pipeline]
         direction LR
-        2A(Read URIs)
-        2B(Read CAP)
-        2C(Parse CAP)
-        2D(Write)
-        2E(Report)
-        2A --> 2B --> 2C --> 2D
-        2D --> 2E
+        2A(Read CAP)
+        2B(Parse CAP)
+        2C(Read Assets)
+        2D(Contextualize)
+        2E(Write)
+        2F(Report)
+        2A --> 2B --> 2D --> 2E --> 2F
+        2C --> 2D
     end
-    subgraph clean [CDF.clean]
-        C[Event]
-        D[Asset]
+    subgraph cdf [CDF]
+        direction LR
+        3C[Event]
+        3D[Asset]
+        subgraph ep [Extraction-Pipelines]
+            31A[Pipeline]
+        end
     end
-    1A --->|read CAP items| cap
-    cap -->|write| C
-    D -->|read| cap
+    1A --->|read CAP items| 2A
+    3D -->|read| 2C
+    2E -->|write data| 3C
+    2F -->|report status| 31A
 ```
 
 Design patterns to make note of:
