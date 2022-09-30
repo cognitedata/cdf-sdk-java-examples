@@ -9,7 +9,7 @@ You can run this module in several ways: 1) locally as a Java application, 2) lo
 ### Run as a local Java application
 
 The minimum requirements for running the module locally:
-- Java 11 SDK
+- Java 17 SDK
 - Maven
 
 On Linux/MaxOS:

@@ -9,7 +9,7 @@ build:
   - image: beam-pipeline-example
     context: .
     jib:
-      fromImage: "gcr.io/distroless/java11-debian11"
+      fromImage: "gcr.io/distroless/java17-debian11"
   tagPolicy:
     dateTime:
       format: "20060102T150405"
