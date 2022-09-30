@@ -8,10 +8,7 @@ cognite:
   host: "https://greenfield.cognitedata.com"
 
   # CDF project
-  project: kjetilh-greenfield
-
-  # Api key authentication. You can also specify this entry via an env. variable COGNITE_APIKEY
-  apiKey:
+  project:
 
   # OpenID Connect client credentials authentication
   clientId:
@@ -22,15 +19,25 @@ cognite:
   scopes:
     - "https://api.cognitedata.com/.default"
 
+# State store configuration
+stateStore:
+  #  local:
+  #    path: "./statestore.json"
+  #    saveInterval: 30
+  raw:
+    database: "met-system"
+    table: "statestore-cap-pipeline"
+    saveInterval: 30
+
 # Source raw db and table to read source data from.
 source:
-  rawDb: "sap-extract"
-  table: "notification"
+  rawDb: "met"
+  table: "met-alerts-cap-items"
 
 # (Optional) Target data set and extraction pipelines
 target:
-  dataSetExternalId:
-  extractionPipelineExternalId:
+  dataSetExternalId: "ds:src002:met"
+  extractionPipelineExternalId: "ep:met-alerts-pipeline"
 
 # Configuration for metrics.
 metrics:

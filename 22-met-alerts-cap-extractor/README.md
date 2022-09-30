@@ -1,28 +1,48 @@
 ## Met Alerts CAP extractor
 
-afgsdgfsdgf. It uses the practices of logging, monitoring, configuration presented in [1-k8-demo](../1-k8-demo/README.md).
+Met alerts are weather forecast alerts issued by the Norwegian Meteorological Institute. The alerts are published via an RSS feed which again links to a separate URI which carries the alert content (CAP). The Met alerts CAP extractor reads the CAP data payload from CAP URIs (produced by the RSS extractor).
+
+ The CAP extractor adds a few capabililties on top of what the [RSS extractor](../21-met-alerts-rss-extractor/) design does. Most notably, it uses a `state store` to keep track of processed data item--this enables delta loading and recovery without having to perform full data reloads. In this specific case, the CAP source items are immutable and should only be read once. In addition, the extractor imploys an `upload queue` for writing data items to CDF.
+ 
+ It uses the practices of logging, monitoring, configuration presented in [1-k8-demo](../1-k8-demo/README.md).
+
+ The Met alerts api: [https://api.met.no/weatherapi/metalerts/1.1/documentation](https://api.met.no/weatherapi/metalerts/1.1/documentation).
 
 The data pipeline performs the following tasks:
-1) Read the main input from a `CDF.Raw` table.
-2) Parse the data input to the `CDF Event` type.
-3) Read `CDF Assets` for contextualization lookup.
-4) Link the events to assets.
-5) Write the result to `CDF Events`.
-6) Report status to `extraction pipelines`.
+1) Read the CAP URIs from the `CDF Raw RSS table`.
+2) Visit the URIs and retrieve the CAP payload.
+2) Parse the CAP data to a `CDF Raw Row`.
+3) Write the results to a `CDF.Raw` table.
+4) Report status to `extraction pipelines`.
 
 ```mermaid
 flowchart LR
-    A[(Raw)] -->|read| B(Data Pipeline)
-    subgraph CDF.clean
-        C[Event]
-        D[Asset]
+    subgraph CDF.Raw
+        1A[(Met.rss)]
+        1B[(Met.cap)]
     end
-    B -->|write| C
-    D -->|read| B
+    subgraph cap [CAP-extractor]
+        direction LR
+        2A(Read URIs)
+        2B(Read CAP)
+        2C(Parse CAP)
+        2D(Write)
+        2E(Report)
+        2A --> 2B --> 2C --> 2D
+        2D --> 2E
+    end
+    1A -->|read| 2A
+    D{{API::Met Alerts Cap}} --->|read| 2B
+    2D -->|write data| 1B
+    subgraph es [CDF.Extraction-Pipelines]
+        3A[Pipeline]
+    end
+    2E -->|Report Status| 3A
 ```
 
 Design patterns to make note of:
-- 
+- Using the `upload queue` to optimize writing to Raw: [https://github.com/cognitedata/cdf-sdk-java/blob/main/docs/utils.md](https://github.com/cognitedata/cdf-sdk-java/blob/main/docs/utils.md).
+- Using `state store` to perform delta loads: [https://github.com/cognitedata/cdf-sdk-java/blob/main/docs/utils.md](https://github.com/cognitedata/cdf-sdk-java/blob/main/docs/utils.md).
 
 ## Quickstart
 
@@ -36,12 +56,12 @@ The minimum requirements for running the module locally:
 
 On Linux/MaxOS:
 ```console
-$ mvn compile exec:java -Dexec.mainClass="com.cognite.examples.RawToClean"
+$ mvn compile exec:java -Dexec.mainClass="com.cognite.met.MetAlertsPipeline"
 ```
 
 On Windows Powershell:
 ```ps
-> mvn compile exec:java -D exec.mainClass="com.cognite.examples.RawToClean"
+> mvn compile exec:java -D exec.mainClass="com.cognite.met.MetAlertsPipeline"
 ```
 
 ### Run as a container on Kubernetes

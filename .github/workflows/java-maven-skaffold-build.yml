@@ -16,6 +16,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    defaults:
+      working-directory: ${{ inputs.repositoryFolder }} 
     steps:
       - uses: actions/checkout@v2
       - name: Set up JDK ${{ inputs.javaVersion }}
@@ -26,6 +28,6 @@ jobs:
       - name: Build image with Skaffold
         uses: hiberbee/github-action-skaffold@1.23.0
         with:
-          working-directory: ${{ inputs.repostoryFolder }}
+#          working-directory: ${{ inputs.repostoryFolder }}
           command: build
           push: false

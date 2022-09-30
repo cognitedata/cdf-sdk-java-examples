@@ -126,7 +126,7 @@ public class AlertsCapExtractor {
             if (extractionPipelineExtId.isPresent()) {
                 writeExtractionPipelineRun(ExtractionPipelineRun.Status.SUCCESS,
                         String.format("Upserted %d CAP items to CDF Raw.",
-                                noElementsGauge.get()));
+                                (int) noElementsGauge.get()));
             }
         } catch (Exception e) {
             LOG.error("Unrecoverable error. Will exit. {}", e.toString());
@@ -361,8 +361,10 @@ public class AlertsCapExtractor {
                 .max()
                 .orElse(0L);
         try {
-            getStateStore().ifPresent(stateStore -> stateStore.expandHigh(stateStoreExtId, lastUpdatedTime));
-            LOG.info("postUpload() - Posting to state store: {} - {}.", stateStoreExtId, lastUpdatedTime);
+            getStateStore().ifPresent(stateStore -> {
+                stateStore.expandHigh(stateStoreExtId, lastUpdatedTime);
+                LOG.info("postUpload() - Posting to state store: {} - {}.", stateStoreExtId, lastUpdatedTime);
+            });
         } catch (Exception e) {
             LOG.warn("postUpload() - Unable to update the state store: {}", e.toString());
         }

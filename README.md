@@ -2,9 +2,12 @@
 
 This repository hosts a set of examples on how to use the Cognite Java SDK to interact with Cognite Data Fusion. The examples demonstrate various patterns, from general techniques like how to implement configurability, how to add monitoring to more specific patterns on how to build a streaming data pipeline and how to implement an interactive engineering diagram pipeline.
 
+There are two categories of examples: 1) templates illustrating a design pattern and 2) complete and runnable scenarios. The templates are "90% code complete", but need to be tailored to your specific input data. You can copy the templates and tweak them to your data. The scenarios, on the other hand, use publicly available data, are code complete and can be run as-is. 
+
 ## Examples
 - [01-k8-demo](./01-k8-demo/). Demonstrating how to set up configurability, monitoring, logging and building the container.
 - [02-raw-to-clean-batch-job](./02-raw-to-clean-batch-job/). Illustrates a batch data pipeline parsing data from CDF.Raw to CDF.Event with contextualization.
+- [20-met-weather-scenario](./20-met-weather-scenario/). A complete data product scenario including extractors and data pipelines for reading weather data produced by [Met Norway](https://api.met.no/).
 
 ## Quickstart
 
@@ -15,10 +18,10 @@ Navigate to the folder for your example, and start the application as a containe
 ### Run as a container on Kubernetes
 
 Minimum requirements for running the module on K8s:
-- Java 11 SDK: [https://adoptium.net/](https://adoptium.net/)
+- Java 17 SDK: [https://adoptium.net/](https://adoptium.net/)
 - Maven: [https://maven.apache.org/download.cgi](https://maven.apache.org/download.cgi)
 - Skaffold: [https://github.com/GoogleContainerTools/skaffold/releases](https://github.com/GoogleContainerTools/skaffold/releases)
-- Local K8s with kubectl
+- Local K8s with kubectl (Docker Desktop, Minikube, etc.)
 
 Make sure your kube context points to the K8s cluster that you want to run the container on. For example, if you 
 have Docker desktop installed, you should see something like the following:
@@ -38,15 +41,15 @@ container job finishes, you can press `ctrl + c` and all resources will be clean
 ### Run as a local Java application
 
 The minimum requirements for running the module locally:
-- Java 11 SDK
+- Java 17 SDK
 - Maven
 
 On Linux/MaxOS:
 ```console
-$ mvn compile exec:java -Dexec.mainClass="com.cognite.sa.TheClassToRun"
+$ mvn compile exec:java -Dexec.mainClass="com.cognite.examples.TheClassToRun"
 ```
 
 On Windows Powershell:
 ```ps
-> mvn compile exec:java -D exec.mainClass="com.cognite.sa.TheClassToRun"
+> mvn compile exec:java -D exec.mainClass="com.cognite.examples.TheClassToRun"
 ```

@@ -3,6 +3,9 @@ package com.cognite.examples;
 import com.cognite.client.CogniteClient;
 import com.cognite.client.config.TokenUrl;
 import com.cognite.client.dto.*;
+import com.cognite.client.queue.UploadQueue;
+import com.cognite.client.statestore.RawStateStore;
+import com.cognite.client.statestore.StateStore;
 import com.cognite.client.util.ParseValue;
 import com.google.common.collect.ImmutableList;
 import com.google.protobuf.Value;
@@ -30,16 +33,24 @@ public class RawToClean {
             ConfigProvider.getConfig().getValue("cognite.host", String.class);
     private static final String cdfProject =
             ConfigProvider.getConfig().getValue("cognite.project", String.class);
-    private static final Optional<String> apiKey =
-            ConfigProvider.getConfig().getOptionalValue("cognite.apiKey", String.class);
-    private static final Optional<String> clientId =
-            ConfigProvider.getConfig().getOptionalValue("cognite.clientId", String.class);
-    private static final Optional<String> clientSecret =
-            ConfigProvider.getConfig().getOptionalValue("cognite.clientSecret", String.class);
-    private static final Optional<String> aadTenantId =
-            ConfigProvider.getConfig().getOptionalValue("cognite.azureADTenantId", String.class);
+    private static final String clientId =
+            ConfigProvider.getConfig().getValue("cognite.clientId", String.class);
+    private static final String clientSecret =
+            ConfigProvider.getConfig().getValue("cognite.clientSecret", String.class);
+    private static final String aadTenantId =
+            ConfigProvider.getConfig().getValue("cognite.azureADTenantId", String.class);
     private static final String[] authScopes =
             ConfigProvider.getConfig().getValue("cognite.scopes", String[].class);
+
+    /*
+    State store configuration. From config file
+     */
+    private static final Optional<String> stateStoreDb =
+            ConfigProvider.getConfig().getOptionalValue("stateStore.raw.database", String.class);
+    private static final Optional<String> stateStoreTable =
+            ConfigProvider.getConfig().getOptionalValue("stateStore.raw.table", String.class);
+    private static final Optional<String> stateStoreSaveInterval =
+            ConfigProvider.getConfig().getOptionalValue("stateStore.raw.saveInterval", String.class);
 
     /*
     CDF.Raw source table configuration. From config file / env variables.
@@ -77,6 +88,8 @@ public class RawToClean {
     private static final CollectorRegistry collectorRegistry = new CollectorRegistry();
     private static final Gauge jobDurationSeconds = Gauge.build()
             .name("job_duration_seconds").help("Job duration in seconds").register(collectorRegistry);
+    private static final Gauge jobStartTimeStamp = Gauge.build()
+            .name("job_start_timestamp").help("Job start timestamp").register(collectorRegistry);
     private static final Gauge errorGauge = Gauge.build()
             .name("job_errors").help("Total job errors").register(collectorRegistry);
     private static final Gauge noElementsGauge = Gauge.build()
@@ -84,8 +97,15 @@ public class RawToClean {
     private static final Gauge noElementsContextualizedGauge = Gauge.build()
             .name("job_no_elements_contextualized").help("Number of contextualized elements").register(collectorRegistry);
 
+    /*
+    Configuration settings--not from file
+     */
+    private static final String stateStoreExtId = "statestore:my-raw-to-clean-pipeline";
+    private static final String lastUpdatedTimeMetadataKey = "source:lastUpdatedTime";
+
     // global data structures
     private static CogniteClient cogniteClient;
+    private static RawStateStore rawStateStore;
     private static OptionalLong dataSetIntId;
     private static Map<String, Long> assetLookupMap;
 
@@ -101,8 +121,8 @@ public class RawToClean {
             if (extractionPipelineExtId.isPresent()) {
                 writeExtractionPipelineRun(ExtractionPipelineRun.Status.SUCCESS,
                         String.format("Upserted %d events to CDF. %d events could be linked to assets.",
-                                noElementsGauge.get(),
-                                noElementsContextualizedGauge.get()));
+                                (int) noElementsGauge.get(),
+                                (int) noElementsContextualizedGauge.get()));
             }
         } catch (Exception e) {
             LOG.error("Unrecoverable error. Will exit. {}", e.toString());
@@ -130,6 +150,7 @@ public class RawToClean {
 
         // Prepare the job duration metrics
         Gauge.Timer jobDurationTimer = jobDurationSeconds.startTimer();
+        jobStartTimeStamp.setToCurrentTime();
 
         // Set up the reader for the raw table
         LOG.info("Starting to read the raw table {}.{}.",
@@ -137,23 +158,28 @@ public class RawToClean {
                 rawTable);
         Iterator<List<RawRow>> rawResultsIterator = getCogniteClient().raw().rows().list(rawDb, rawTable);
 
+        // Start the events upload queue
+        UploadQueue<Event, Event> eventEventUploadQueue = getCogniteClient().events().uploadQueue()
+                .withExceptionHandlerFunction(exception -> {throw new RuntimeException(exception);});
+        eventEventUploadQueue.start();
+
         // Iterate through all rows in batches and write to clean. This will effectively "stream" through
         // the data so that we have ~constant memory usage no matter how large the data set is.
         while (rawResultsIterator.hasNext()) {
             // Temporary collection for hosting a single batch of parsed events.
             List<Event> events = new ArrayList<>();
 
-            // Iterate through the individual rows in a single results batch and parse them to events.
+            // Iterate through the individual rows in a single results batch, parse them to events
+            // and add to the upload queue.
             for (RawRow row : rawResultsIterator.next()) {
-                Event event = parseRawRowToEvent(row);
-                events.add(event);
+                eventEventUploadQueue.put(parseRawRowToEvent(row));
             }
-
-            // Upsert a batch of results to CDF
-            getCogniteClient().events().upsert(events);
-            noElementsGauge.inc(events.size());
         }
 
+        // Stop the upload queue. This will also perform a final upload.
+        eventEventUploadQueue.stop();
+
+        // All done
         jobDurationTimer.setDuration();
         LOG.info("Finished processing {} rows from raw. Duration {}",
                 noElementsGauge.get(),
@@ -182,7 +208,7 @@ public class RawToClean {
         final String extIdKey = "RawExtIdColumn";
         final String descriptionKey = "RawDescriptionColumn";
         final String startDateTimeKey = "RawStartDateTimeColumn";
-        final String endDataTimeKey = "RawEndDateTimeColumn";
+        final String endDateTimeKey = "RawEndDateTimeColumn";
 
         // Contextualization configuration
         final String assetReferenceKey = "RawAssetNameReferenceColumn";
@@ -228,8 +254,8 @@ public class RawToClean {
         if (columnsMap.containsKey(startDateTimeKey) && columnsMap.get(startDateTimeKey).hasNumberValue()) {
             eventBuilder.setStartTime((long) columnsMap.get(startDateTimeKey).getNumberValue());
         }
-        if (columnsMap.containsKey(endDataTimeKey) && columnsMap.get(endDataTimeKey).hasNumberValue()) {
-            eventBuilder.setEndTime((long) columnsMap.get(endDataTimeKey).getNumberValue());
+        if (columnsMap.containsKey(endDateTimeKey) && columnsMap.get(endDateTimeKey).hasNumberValue()) {
+            eventBuilder.setEndTime((long) columnsMap.get(endDateTimeKey).getNumberValue());
         }
 
         // Add fixed values
@@ -245,16 +271,15 @@ public class RawToClean {
                 .collect(Collectors.toMap(Map.Entry::getKey, entry -> ParseValue.parseString(entry.getValue())));
 
         // Add basic lineage info
-        metadata.put("dataSource",
+        metadata.put("source:upstreamDataSource",
                 String.format("CDF Raw: %s.%s.%s", row.getDbName(), row.getTableName(), row.getKey()));
+        metadata.put(lastUpdatedTimeMetadataKey, String.valueOf(row.getLastUpdatedTime()));
 
         // Don't forget to add the metadata to the event object
         eventBuilder.putAllMetadata(metadata);
 
         // If a target dataset has been configured, add it to the event object
-        if (getDataSetIntId().isPresent()) {
-            eventBuilder.setDataSetId(dataSetIntId.getAsLong());
-        }
+        getDataSetIntId().ifPresent(intId -> eventBuilder.setDataSetId(intId));
 
         /*
         Contextualization.
@@ -347,6 +372,44 @@ public class RawToClean {
     }
 
     /*
+    The post upload function. Will update the elements counter and update the state store (if configured)
+    with the last updated time of the source.
+     */
+    private static void postUpload(List<Event> events) {
+        String loggingPrefix = "postUpload() -";
+        if (events.isEmpty()) {
+            LOG.info(loggingPrefix + "No events posted to CDF--will skip updating metrics and the state store.");
+            return;
+        }
+        LOG.debug(loggingPrefix + "Submitted {} events to CDF.", events.size());
+        LOG.debug(loggingPrefix + "Last updated time profile for first 5 events: {}",
+                events.stream()
+                        .limit(5)
+                        .map(event -> String.format("Key: %s - Last updated timestamp: %s",
+                                event.getExternalId(),
+                                event.getMetadataOrDefault(lastUpdatedTimeMetadataKey, "Null")))
+                        .toList());
+
+        // Update the output elements counter
+        noElementsGauge.inc(events.size());
+
+        // Find the most recent updated timestamp
+        long lastUpdatedTime = events.stream()
+                .map(event -> event.getMetadataOrDefault(lastUpdatedTimeMetadataKey, "0"))
+                .mapToLong(Long::parseLong)
+                .max()
+                .orElse(0L);
+        try {
+            getStateStore().ifPresent(stateStore -> {
+                stateStore.expandHigh(stateStoreExtId, lastUpdatedTime);
+                LOG.info("postUpload() - Posting to state store: {} - {}.", stateStoreExtId, lastUpdatedTime);
+            });
+        } catch (Exception e) {
+            LOG.warn("postUpload() - Unable to update the state store: {}", e.toString());
+        }
+    }
+
+    /*
     Return the Cognite client.
 
     If the client isn't instantiated, it will be created according to the configured authentication options. After the
@@ -355,26 +418,37 @@ public class RawToClean {
     private static CogniteClient getCogniteClient() throws Exception {
         if (null == cogniteClient) {
             // The client has not been instantiated yet
-            if (clientId.isPresent() && clientSecret.isPresent() && aadTenantId.isPresent()) {
-                cogniteClient = CogniteClient.ofClientCredentials(
-                                clientId.get(),
-                                clientSecret.get(),
-                                TokenUrl.generateAzureAdURL(aadTenantId.get()),
-                                Arrays.asList(authScopes))
-                        .withProject(cdfProject)
-                        .withBaseUrl(cdfHost);
-            } else if (apiKey.isPresent()) {
-                cogniteClient = CogniteClient.ofKey(apiKey.get())
-                        .withProject(cdfProject)
-                        .withBaseUrl(cdfHost);
-            } else {
-                String message = "Unable to instantiate the Cognite Client. No valid authentication configuration.";
-                LOG.error(message);
-                throw new Exception(message);
-            }
+            cogniteClient = CogniteClient.ofClientCredentials(
+                            clientId,
+                            clientSecret,
+                            TokenUrl.generateAzureAdURL(aadTenantId),
+                            Arrays.asList(authScopes))
+                    .withProject(cdfProject)
+                    .withBaseUrl(cdfHost);
         }
 
         return cogniteClient;
+    }
+
+    /*
+    Return the state store (if configured)
+     */
+    private static Optional<StateStore> getStateStore() throws Exception {
+        if (null == rawStateStore) {
+            // Check if we have a state store config and instantiate the state store
+            if (stateStoreDb.isPresent() && stateStoreTable.isPresent()) {
+                LOG.info("State store defined in the configuration. Setting up Raw state store for {}.{}",
+                        stateStoreDb.get(),
+                        stateStoreTable.get());
+                rawStateStore = RawStateStore.of(getCogniteClient(), stateStoreDb.get(), stateStoreTable.get());
+                if (stateStoreSaveInterval.isPresent()) {
+                    rawStateStore = rawStateStore
+                            .withMaxCommitInterval(Duration.ofSeconds(Long.parseLong(stateStoreSaveInterval.get())));
+                }
+            }
+        }
+
+        return Optional.ofNullable(rawStateStore);
     }
 
     /*

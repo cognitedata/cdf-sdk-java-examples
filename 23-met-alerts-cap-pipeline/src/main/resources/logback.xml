@@ -26,6 +26,7 @@
         </encoder>
     </appender>
 
+    <logger name="com.cognite.met" level="info"/>
     <root level="info">
         <appender-ref ref="STDOUT" />
         <appender-ref ref="STDERR" />

@@ -1,6 +1,10 @@
 ## CAP alerts, Raw to Clean pipeline
 
-This pipeline processes data from CDF Raw representing CAP met alerts. It uses the practices of logging, monitoring, configuration presented in [1-k8-demo](../1-k8-demo/README.md).
+This pipeline processes data from CDF Raw representing CAP met alerts. Met alerts are weather forecast alerts issued by the Norwegian Meteorological Institute. The raw CAP items are parsed into CDF Events and linked/contextualized to CDF Assets representing geographic locations.
+
+It uses the practices of logging, monitoring, configuration presented in [1-k8-demo](../1-k8-demo/README.md).
+
+ The Met alerts api: [https://api.met.no/weatherapi/metalerts/1.1/documentation](https://api.met.no/weatherapi/metalerts/1.1/documentation).
 
 The data pipeline performs the following tasks:
 1) Read the main input from a `CDF.Raw` table.
@@ -12,13 +16,32 @@ The data pipeline performs the following tasks:
 
 ```mermaid
 flowchart LR
-    A[(Raw)] -->|read| B(Data Pipeline)
-    subgraph CDF.clean
-        C[Event]
-        D[Asset]
+    subgraph raw [CDF Raw]
+        1A[(Met.cap)]
     end
-    B -->|write| C
-    D -->|read| B
+    subgraph cap [CAP Data Pipeline]
+        direction LR
+        2A(Read CAP)
+        2B(Parse CAP)
+        2C(Read Assets)
+        2D(Contextualize)
+        2E(Write)
+        2F(Report)
+        2A --> 2B --> 2D --> 2E --> 2F
+        2C --> 2D
+    end
+    subgraph cdf [CDF]
+        direction LR
+        3C[Event]
+        3D[Asset]
+        subgraph ep [Extraction-Pipelines]
+            31A[Pipeline]
+        end
+    end
+    1A --->|read CAP items| 2A
+    3D -->|read| 2C
+    2E -->|write data| 3C
+    2F -->|report status| 31A
 ```
 
 Design patterns to make note of:
@@ -37,12 +60,12 @@ The minimum requirements for running the module locally:
 
 On Linux/MaxOS:
 ```console
-$ mvn compile exec:java -Dexec.mainClass="com.cognite.examples.RawToClean"
+$ mvn compile exec:java -Dexec.mainClass="com.cognite.met.MetAlertsPipeline"
 ```
 
 On Windows Powershell:
 ```ps
-> mvn compile exec:java -D exec.mainClass="com.cognite.examples.RawToClean"
+> mvn compile exec:java -D exec.mainClass="com.cognite.met.MetAlertsPipeline"
 ```
 
 ### Run as a container on Kubernetes

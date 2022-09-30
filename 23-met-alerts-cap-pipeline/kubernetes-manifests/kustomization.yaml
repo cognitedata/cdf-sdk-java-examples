@@ -3,15 +3,15 @@ kind: Kustomization
 
 #namespace: default
 commonLabels:
-  app.kubernetes.io/name: raw-to-clean-batch-job
-  app: raw-to-clean-batch-job
+  app.kubernetes.io/name: met-alerts-cap-pipeline
+  app: met-alerts-cap-pipeline
 resources:
-  - raw-clean-batch.job.yaml
+  - met-alerts-cap-pipeline.job.yaml
 
 # The generator will convert the config.yaml file into a K8 config map which can be mapped
 # into the container
 configMapGenerator:
-  - name: raw-to-clean-batch-job-config
+  - name: met-alerts-cap-pipeline-config
     files:
       - config.yaml=config.yaml
 
