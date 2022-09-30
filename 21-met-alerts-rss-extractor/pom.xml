@@ -5,7 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>com.cognite</groupId>
-    <artifactId>met-metalerts-rss-extractor</artifactId>
+    <artifactId>met-alerts-rss-extractor</artifactId>
     <version>1.0-SNAPSHOT</version>
 
     <properties>

@@ -20,7 +20,7 @@ The modules themselves run on K8s:
 - Skaffold: [https://github.com/GoogleContainerTools/skaffold/releases](https://github.com/GoogleContainerTools/skaffold/releases)
 - Local K8s with kubectl (Docker Desktop, Minikube, etc.)
 
-### Locations
+### Data: Locations
 
 Locations are metadata about geographic locations from the Met Frost API. They are modelled as CDF Assets and optional geographic features.
 
@@ -41,12 +41,17 @@ flowchart LR
 ```
 
 
-### Met alerts
+### Data: Met alerts
 
 Met alerts are weather forecast alerts issued by the Norwegian Meteorological Institute. The alerts are published via an RSS feed which again links to a separate URI which carries the alert content. 
 The alert is modelled as a CDF event with an optional geographic feature.
 
-The Met alerts api: [https://api.met.no/weatherapi/metalerts/1.1/documentation](https://api.met.no/weatherapi/metalerts/1.1/documentation)
+The Met alerts api: [https://api.met.no/weatherapi/metalerts/1.1/documentation](https://api.met.no/weatherapi/metalerts/1.1/documentation).
+
+Met alerts data is integrated using the following modules:
+- RSS extractor: [../21-met-alerts-rss-extractor](../21-met-alerts-rss-extractor).
+- CAP extractor: [../22-met-alerts-cap-extractor](../21-met-alerts-cap-extractor).
+- CAP alerts pipeline: [../23-met-alerts-cap-pipeline](../21-met-alerts-cap-pipeline).
 
 ```mermaid
 flowchart LR
@@ -57,7 +62,7 @@ flowchart LR
     end
     B -->|write| C
     C -->|read| E(Cap Extractor)
-    F{{Met Alerts Cap}} -->|read| E
+    F{{Met Alerts Cap}} ---->|read| E
     E -->|write| D
     subgraph CDF.Clean
         G[Events]

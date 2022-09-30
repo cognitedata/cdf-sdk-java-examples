@@ -5,7 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>com.cognite</groupId>
-    <artifactId>met-metalerts-cap-extractor</artifactId>
+    <artifactId>met-alerts-cap-extractor</artifactId>
     <version>1.0-SNAPSHOT</version>
 
     <properties>
