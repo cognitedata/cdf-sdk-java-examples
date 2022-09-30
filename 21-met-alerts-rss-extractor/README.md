@@ -16,16 +16,31 @@ The data pipeline performs the following tasks:
 
 ```mermaid
 flowchart LR
-     A{{Met Alerts RSS}} -->|read| B(RSS Extractor)
-    subgraph CDF.Raw
-        C[(Met.rss)]
+    subgraph rss [RSS-Extractor]
+        direction LR
+        1A(Read)
+        1B(Parse)
+        1C(Write)
+        1D(Report)
+        1A --> 1B --> 1C
+        1C --> 1D
     end
-    B -->|write| C
+     A{{API::Met Alerts RSS}} -->|read| rss
+    subgraph cdf [CDF]
+        subgraph Raw
+            21A[(Met.rss)]
+        end
+        subgraph ep [Extraction-Pipelines]
+            22A[Pipeline]
+        end
+    end
+    
+    1C -->|write data| 21A
+    1D -->|report status| 22A
 ```
 
 Design patterns to make note of:
 - Using a client library to read from source--in this case an RSS library.
-- 
 
 ## Quickstart
 

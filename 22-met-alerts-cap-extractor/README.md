@@ -2,7 +2,7 @@
 
 Met alerts are weather forecast alerts issued by the Norwegian Meteorological Institute. The alerts are published via an RSS feed which again links to a separate URI which carries the alert content (CAP). The Met alerts CAP extractor reads the CAP data payload from CAP URIs (produced by the RSS extractor).
 
- The extractor itself is as simple as it gets. It performs a full (source) read, pushes all items to CDF Raw and reports its status using metrics and `extraction pipelines`. The source data volume is very low (<100 items) so we don't need to take throttling or delta-load into account.
+ The CAP extractor adds a few capabililties on top of what the [RSS extractor](../21-met-alerts-rss-extractor/) design does. Most notably, it uses a `state store` to keep track of processed data item--this enables delta loading and recovery without having to perform full data reloads. In this specific case, the CAP source items are immutable and should only be read once. In addition, the extractor imploys an `upload queue` for writing data items to CDF.
  
  It uses the practices of logging, monitoring, configuration presented in [1-k8-demo](../1-k8-demo/README.md).
 
@@ -18,17 +18,31 @@ The data pipeline performs the following tasks:
 ```mermaid
 flowchart LR
     subgraph CDF.Raw
-        A[(Met.rss)]
-        B[(Met.cap)]
+        1A[(Met.rss)]
+        1B[(Met.cap)]
     end
-    A -->|read| C(Cap Extractor)
-    D{{Met Alerts Cap}} -->|read| C
-    C -->|write| B
+    subgraph cap [CAP-extractor]
+        direction LR
+        2A(Read URIs)
+        2B(Read CAP)
+        2C(Parse CAP)
+        2D(Write)
+        2E(Report)
+        2A --> 2B --> 2C --> 2D
+        2D --> 2E
+    end
+    1A -->|read| 2A
+    D{{API::Met Alerts Cap}} --->|read| 2B
+    2D -->|write data| 1B
+    subgraph es [CDF.Extraction-Pipelines]
+        3A[Pipeline]
+    end
+    2E -->|Report Status| 3A
 ```
 
 Design patterns to make note of:
-- Using the `upload queue` to optimize writing to Raw.
-- Using `state store` to perform delta loads.
+- Using the `upload queue` to optimize writing to Raw: [https://github.com/cognitedata/cdf-sdk-java/blob/main/docs/utils.md](https://github.com/cognitedata/cdf-sdk-java/blob/main/docs/utils.md).
+- Using `state store` to perform delta loads: [https://github.com/cognitedata/cdf-sdk-java/blob/main/docs/utils.md](https://github.com/cognitedata/cdf-sdk-java/blob/main/docs/utils.md).
 
 ## Quickstart
 
