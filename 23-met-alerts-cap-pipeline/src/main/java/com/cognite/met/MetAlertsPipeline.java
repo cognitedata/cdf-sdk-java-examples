@@ -61,11 +61,6 @@ public class MetAlertsPipeline {
             ConfigProvider.getConfig().getOptionalValue("target.extractionPipelineExternalId", String.class);
 
     /*
-    Pipeline configuration
-     */
-    private static final String extIdPrefix = "source-name:";
-
-    /*
     Metrics target configuration. From config file / env variables.
      */
     private static final boolean enableMetrics =
@@ -103,6 +98,8 @@ public class MetAlertsPipeline {
     /*
     Configuration settings--not from file
      */
+    private static final String appIdentifier = "met-alerts-pipeline";
+    private static final String extIdPrefix = "met-cap-id:";
     private static final String stateStoreExtId = "statestore:met-alerts-pipeline";
     private static final String lastUpdatedTimeMetadataKey = "source:lastUpdatedTime";
 
@@ -419,7 +416,8 @@ public class MetAlertsPipeline {
         if (null == cogniteClient) {
             // The client has not been instantiated yet
             ClientConfig clientConfig = ClientConfig.create()
-                    .withUpsertMode(UpsertMode.REPLACE);
+                    .withUpsertMode(UpsertMode.REPLACE)
+                    .withAppIdentifier(appIdentifier);
 
             cogniteClient = CogniteClient.ofClientCredentials(
                             clientId,

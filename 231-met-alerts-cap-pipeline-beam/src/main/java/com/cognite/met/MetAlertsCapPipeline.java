@@ -5,12 +5,17 @@ import com.cognite.beam.io.RequestParameters;
 import com.cognite.beam.io.config.ProjectConfig;
 import com.cognite.beam.io.config.ReaderConfig;
 import com.cognite.beam.io.config.WriterConfig;
+import com.cognite.client.CogniteClient;
+import com.cognite.client.config.ClientConfig;
 import com.cognite.client.config.TokenUrl;
+import com.cognite.client.config.UpsertMode;
 import com.cognite.client.dto.*;
 import com.cognite.client.util.ParseValue;
+import com.google.common.collect.ImmutableList;
 import com.google.protobuf.Value;
 import io.prometheus.client.CollectorRegistry;
 import io.prometheus.client.Gauge;
+import io.prometheus.client.exporter.PushGateway;
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.PipelineResult;
 import org.apache.beam.sdk.coders.KvCoder;
@@ -27,6 +32,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.Serializable;
+import java.net.URL;
+import java.time.Instant;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -67,12 +74,6 @@ public class MetAlertsCapPipeline {
             ConfigProvider.getConfig().getOptionalValue("target.extractionPipelineExternalId", String.class);
 
     /*
-    Pipeline configuration
-     */
-    private static final String appIdentifier = "my-beam-app";
-    private static final String extIdPrefix = "source-name:";
-
-    /*
     Metrics target configuration. From config file / env variables.
      */
     private static final boolean enableMetrics =
@@ -97,7 +98,17 @@ public class MetAlertsCapPipeline {
     private static final Gauge noElementsContextualizedGauge = Gauge.build()
             .name("job_no_elements_contextualized").help("Number of contextualized elements").register(collectorRegistry);
 
+    /*
+    Configuration settings--not from file
+     */
+    private static final String appIdentifier = "met-alerts-pipeline";
+    private static final String extIdPrefix = "met-cap-id:";
+    private static final String stateStoreExtId = "statestore:met-alerts-pipeline";
+    private static final String lastUpdatedTimeMetadataKey = "source:lastUpdatedTime";
+
     // global data structures
+    private static CogniteClient cogniteClient;
+    private static OptionalLong dataSetIntId;
 
     /**
      * Concept #1: You can make your pipeline assembly code less verbose by defining your DoFns
@@ -252,7 +263,7 @@ public class MetAlertsCapPipeline {
     /*
     The main logic to execute.
      */
-    static PipelineResult runWordCount(PipelineOptions options) throws Exception {
+    static PipelineResult runMetAlertsCapPipeline(PipelineOptions options) throws Exception {
         Pipeline p = Pipeline.create(options);
 
         /*
@@ -333,22 +344,40 @@ public class MetAlertsCapPipeline {
     The entry point of the code. It executes the main logic and push job metrics upon completion.
      */
     public static void main(String[] args) {
-        PipelineOptions options =
-                PipelineOptionsFactory.fromArgs(args).withValidation().as(PipelineOptions.class);
+        boolean jobFailed = false;
+        try {
+            PipelineOptions options =
+                    PipelineOptionsFactory.fromArgs(args).withValidation().as(PipelineOptions.class);
 
-        PipelineResult result = runWordCount(options);
-        LOG.info("Started pipeline");
-        result.waitUntilFinish();
+            PipelineResult result = runMetAlertsCapPipeline(options);
+            LOG.info("Started pipeline");
+            result.waitUntilFinish();
 
-        LOG.info("Pipeline finished with status: {}", result.getState().toString());
-        long totalMemMb = Runtime.getRuntime().totalMemory() / (1024 * 1024);
-        long freeMemMb = Runtime.getRuntime().freeMemory() / (1024 * 1024);
-        long usedMemMb = totalMemMb - freeMemMb;
-        String logMessage = String.format("----------------------- memory stats --------------------- %n"
-                + "Total memory: %d MB %n"
-                + "Used memory: %d MB %n"
-                + "Free memory: %d MB", totalMemMb, usedMemMb, freeMemMb);
-        LOG.info(logMessage);
+            LOG.info("Pipeline finished with status: {}", result.getState().toString());
+            long totalMemMb = Runtime.getRuntime().totalMemory() / (1024 * 1024);
+            long freeMemMb = Runtime.getRuntime().freeMemory() / (1024 * 1024);
+            long usedMemMb = totalMemMb - freeMemMb;
+            String logMessage = String.format("----------------------- memory stats --------------------- %n"
+                    + "Total memory: %d MB %n"
+                    + "Used memory: %d MB %n"
+                    + "Free memory: %d MB", totalMemMb, usedMemMb, freeMemMb);
+            LOG.info(logMessage);
+        } catch (Exception e) {
+            LOG.error("Unrecoverable error. Will exit. {}", e.toString());
+            errorGauge.inc();
+            jobFailed = true;
+            if (extractionPipelineExtId.isPresent()) {
+                writeExtractionPipelineRun(ExtractionPipelineRun.Status.FAILURE,
+                        String.format("Job failed: %s", e.getMessage()));
+            }
+        } finally {
+            if (enableMetrics) {
+                pushMetrics();
+            }
+            if (jobFailed) {
+                System.exit(1); // container exit code for execution errors, etc.
+            }
+        }
     }
 
 
@@ -375,5 +404,121 @@ public class MetAlertsCapPipeline {
             LOG.error(message);
             throw new Exception(message);
         }
+    }
+
+    /*
+    Return the data set internal id.
+
+    If the data set external id has been configured, this method will translate this to the corresponding
+    internal id.
+     */
+    private static OptionalLong getDataSetIntId() throws Exception {
+        if (null == dataSetIntId) {
+            if (targetDataSetExtId.isPresent()) {
+                // Get the data set id
+                LOG.info("Looking up the data set external id: {}.",
+                        targetDataSetExtId.get());
+                List<DataSet> dataSets = getCogniteClient().datasets()
+                        .retrieve(ImmutableList.of(Item.newBuilder().setExternalId(targetDataSetExtId.get()).build()));
+
+                if (dataSets.size() != 1) {
+                    // The provided data set external id cannot be found.
+                    String message = String.format("The configured data set external id does not exist: %s", targetDataSetExtId.get());
+                    LOG.error(message);
+                    throw new Exception(message);
+                }
+                dataSetIntId = OptionalLong.of(dataSets.get(0).getId());
+            } else {
+                dataSetIntId = OptionalLong.empty();
+            }
+        }
+
+        return dataSetIntId;
+    }
+
+    /*
+    Return the Cognite client.
+
+    If the client isn't instantiated, it will be created according to the configured authentication options. After the
+    initial instantiation, the client will be cached and reused.
+     */
+    private static CogniteClient getCogniteClient() throws Exception {
+        if (null == cogniteClient) {
+            // The client has not been instantiated yet
+            ClientConfig clientConfig = ClientConfig.create()
+                    .withUpsertMode(UpsertMode.REPLACE)
+                    .withAppIdentifier(appIdentifier);
+
+            if (clientId.isPresent() && clientSecret.isPresent() && aadTenantId.isPresent()) {
+                cogniteClient = CogniteClient.ofClientCredentials(
+                                clientId.get(),
+                                clientSecret.get(),
+                                TokenUrl.generateAzureAdURL(aadTenantId.get()),
+                                Arrays.asList(authScopes))
+                        .withProject(cdfProject)
+                        .withBaseUrl(cdfHost)
+                        .withClientConfig(clientConfig);
+
+            } else if (apiKey.isPresent()) {
+                cogniteClient = CogniteClient.ofKey(apiKey.get())
+                        .withProject(cdfProject)
+                        .withBaseUrl(cdfHost)
+                        .withClientConfig(clientConfig);
+            } else {
+                String message = "Unable to set up the Cognite Client. No valid authentication configuration.";
+                LOG.error(message);
+                throw new Exception(message);
+            }
+        }
+
+        return cogniteClient;
+    }
+
+    /*
+    Creates an extraction pipeline run and writes it to Cognite Data Fusion.
+     */
+    private static boolean writeExtractionPipelineRun(ExtractionPipelineRun.Status status, String message) {
+        boolean writeSuccess = false;
+        if (extractionPipelineExtId.isPresent()) {
+            try {
+                ExtractionPipelineRun pipelineRun = ExtractionPipelineRun.newBuilder()
+                        .setExternalId(extractionPipelineExtId.get())
+                        .setCreatedTime(Instant.now().toEpochMilli())
+                        .setStatus(status)
+                        .setMessage(message)
+                        .build();
+
+                LOG.info("Writing extraction pipeline run with status: {}", pipelineRun);
+                getCogniteClient().extractionPipelines().runs().create(List.of(pipelineRun));
+                writeSuccess = true;
+            } catch (Exception e) {
+                LOG.warn("Error when trying to create extraction pipeline run: {}", e.toString());
+            }
+        } else {
+            LOG.warn("Extraction pipeline external id is not configured. Cannot create pipeline run.");
+        }
+
+        return writeSuccess;
+    }
+
+    /*
+    Push the current metrics to the push gateway.
+     */
+    private static boolean pushMetrics() {
+        boolean isSuccess = false;
+        if (pushGatewayUrl.isPresent()) {
+            try {
+                LOG.info("Pushing metrics to {}", pushGatewayUrl);
+                PushGateway pg = new PushGateway(new URL(pushGatewayUrl.get())); //9091
+                pg.pushAdd(collectorRegistry, metricsJobName);
+                isSuccess = true;
+            } catch (Exception e) {
+                LOG.warn("Error when trying to push metrics: {}", e.toString());
+            }
+        } else {
+            LOG.warn("No metrics push gateway configured. Cannot push the metrics.");
+        }
+
+        return isSuccess;
     }
 }

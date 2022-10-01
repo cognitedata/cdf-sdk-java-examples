@@ -17,7 +17,7 @@
         <cdf-sdk-java.version>1.17.0</cdf-sdk-java.version>
         <slf4j-api.version>2.0.1</slf4j-api.version>
         <logback-classic.version>1.4.1</logback-classic.version>
-        <smallrye.config.version>2.12.0</smallrye.config.version>
+        <smallrye.config.version>2.12.1</smallrye.config.version>
         <io.prometheus.version>0.16.0</io.prometheus.version>
         <jackson-dataformat-xml.version>2.13.4</jackson-dataformat-xml.version>
         <junit.version>5.9.0</junit.version>
