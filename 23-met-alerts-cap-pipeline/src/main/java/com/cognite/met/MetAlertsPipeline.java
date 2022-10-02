@@ -224,7 +224,7 @@ public class MetAlertsPipeline {
         The parsing logic.
          */
         Event.Builder eventBuilder = Event.newBuilder()
-                .setExternalId(row.getKey());
+                .setExternalId(extIdPrefix + row.getKey());
         Map<String, Value> columnsMap = row.getColumns().getFieldsMap();
 
         // Add the mandatory fields

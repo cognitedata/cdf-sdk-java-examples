@@ -28,13 +28,13 @@ cognite:
   scopes:
     - "https://api.cognitedata.com/.default"
 
-# Source config.
+# Source raw db and table to read source data from.
 source:
-  fileUri: "gs://apache-beam-samples/shakespeare/kinglear.txt"
+  rawDb: "raw-db-name"
+  table: "raw-table-name"
 
 # Target data set and extraction pipelines
 target:
-  fileUri: "./fileOut.txt"
   dataSetExternalId:
   extractionPipelineExternalId:
 

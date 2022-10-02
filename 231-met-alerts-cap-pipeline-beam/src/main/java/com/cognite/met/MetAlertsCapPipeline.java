@@ -13,6 +13,7 @@ import com.cognite.client.dto.*;
 import com.cognite.client.util.ParseValue;
 import com.google.common.collect.ImmutableList;
 import com.google.protobuf.Value;
+import com.google.protobuf.util.Values;
 import io.prometheus.client.CollectorRegistry;
 import io.prometheus.client.Gauge;
 import io.prometheus.client.exporter.PushGateway;
@@ -34,6 +35,7 @@ import org.slf4j.LoggerFactory;
 import java.io.Serializable;
 import java.net.URL;
 import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -124,21 +126,23 @@ public class MetAlertsCapPipeline {
          */
         // Key columns
         // These raw columns map to the event schema fields
-        final String extIdKey = "RawExtIdColumn";
-        final String descriptionKey = "RawDescriptionColumn";
-        final String startDateTimeKey = "RawStartDateTimeColumn";
-        final String endDataTimeKey = "RawEndDateTimeColumn";
+        final List<String> descriptionKeys = List.of("headline","description");
+        final String startDateTimeKey = "effective";
+        final String endDateTimeKey = "expires";
+        final String subtypeKey = "event";
+
+        // Contextualization configuration
+        //final String assetReferenceKey = "RawAssetNameReferenceColumn";
 
         // Fixed values
         // Hardcoded values to add to the event schema fields
-        final String typeValue = "event-type";
-        final String subtypeValue = "event-subtype";
-        final String sourceValue = "data-source-name";
+        final String typeValue = "Met Alert";
+        final String sourceValue = "Met Norway";
 
         // Include / exclude columns
         // For filtering the entries to the metadata bucket
-        final String excludeColumnPrefix = "exclude__";
-        List<String> excludeColumns = List.of("exclude-column-a", "exclude-column-b", "exclude-column-c");
+        //final String excludeColumnPrefix = "exclude__";
+        List<String> excludeColumns = List.of();
 
         // Metrics
         private final Counter noElements = Metrics.counter(ParseRowToEventFn.class, "noElements");
@@ -156,52 +160,51 @@ public class MetAlertsCapPipeline {
                                    ProcessContext context) throws Exception {
             noElements.inc();
             Map<String, Long> dataSetsMap = context.sideInput(dataSetsExtIdMapView);
-            Event.Builder eventBuilder = Event.newBuilder();
             Map<String, Value> columnsMap = element.getColumns().getFieldsMap();
+
+            Event.Builder eventBuilder = Event.newBuilder()
+                    .setExternalId(extIdPrefix + element.getKey());
 
             // Add the mandatory fields
             // If a mandatory field is missing, you should flag it and handle that record specifically. Either by failing
             // the entire job, or putting the failed records in a "dead letter queue".
-            if (columnsMap.containsKey(extIdKey) && columnsMap.get(extIdKey).hasStringValue()) {
-                eventBuilder.setExternalId(extIdPrefix + columnsMap.get(extIdKey).getStringValue());
-            } else {
-                String message = String.format(loggingPrefix + "Could not parse field [%s].",
-                        extIdKey);
-                LOG.error(message);
-                throw new Exception(message);
-            }
-            if (columnsMap.containsKey(descriptionKey) && columnsMap.get(descriptionKey).hasStringValue()) {
-                eventBuilder.setDescription(columnsMap.get(descriptionKey).getStringValue());
-            } else {
-                String message = String.format(loggingPrefix + "Could not parse field [%s].",
-                        descriptionKey);
-                LOG.error(message);
-                throw new Exception(message);
-            }
 
             // Add optional fields. If an optional field is missing, no need to take any action (usually)
-            if (columnsMap.containsKey(startDateTimeKey) && columnsMap.get(startDateTimeKey).hasNumberValue()) {
-                eventBuilder.setStartTime((long) columnsMap.get(startDateTimeKey).getNumberValue());
+            List<String> descriptionElements = descriptionKeys.stream()
+                    .map(key -> columnsMap.getOrDefault(key, Values.of("")).getStringValue())
+                    .toList();
+            if (descriptionElements.size() > 0) {
+                eventBuilder.setDescription(String.join(" - ", descriptionElements));
             }
-            if (columnsMap.containsKey(endDataTimeKey) && columnsMap.get(endDataTimeKey).hasNumberValue()) {
-                eventBuilder.setEndTime((long) columnsMap.get(endDataTimeKey).getNumberValue());
+            if (columnsMap.containsKey(startDateTimeKey) && columnsMap.get(startDateTimeKey).hasStringValue()) {
+                eventBuilder.setStartTime(
+                        OffsetDateTime.parse(columnsMap.get(startDateTimeKey).getStringValue()).toInstant().toEpochMilli()
+                );
+            }
+            if (columnsMap.containsKey(endDateTimeKey) && columnsMap.get(endDateTimeKey).hasStringValue()) {
+                eventBuilder.setEndTime(
+                        OffsetDateTime.parse(columnsMap.get(endDateTimeKey).getStringValue()).toInstant().toEpochMilli()
+                );
+            }
+            if (columnsMap.containsKey(subtypeKey) && columnsMap.get(subtypeKey).hasStringValue()) {
+                eventBuilder.setSubtype(columnsMap.get(subtypeKey).getStringValue());
             }
 
             // Add fixed values
             eventBuilder
                     .setSource(sourceValue)
-                    .setType(typeValue)
-                    .setSubtype(subtypeValue);
+                    .setType(typeValue);
 
             // Add fields to metadata based on the exclusion filters
             Map<String, String> metadata = columnsMap.entrySet().stream()
-                    .filter(entry -> !entry.getKey().startsWith(excludeColumnPrefix))
+                    //.filter(entry -> !entry.getKey().startsWith(excludeColumnPrefix))
                     .filter(entry -> !excludeColumns.contains(entry.getKey()))
                     .collect(Collectors.toMap(Map.Entry::getKey, entry -> ParseValue.parseString(entry.getValue())));
 
             // Add basic lineage info
-            metadata.put("dataSource",
+            metadata.put("source:upstreamDataSource",
                     String.format("CDF Raw: %s.%s.%s", element.getDbName(), element.getTableName(), element.getKey()));
+            metadata.put(lastUpdatedTimeMetadataKey, String.valueOf(element.getLastUpdatedTime()));
 
             // Don't forget to add the metadata to the event object
             eventBuilder.putAllMetadata(metadata);
@@ -330,8 +333,8 @@ public class MetAlertsCapPipeline {
                                 .withTableName(rawTable)))
                 .apply("Parse row", ParDo.of(new ParseRowToEventFn(dataSetsExtIdMap))
                         .withSideInputs(dataSetsExtIdMap))
-                .apply("Contextualize event", ParDo.of(new ContextualizeEventFn(assetsMap))
-                        .withSideInputs(assetsMap))
+                //.apply("Contextualize event", ParDo.of(new ContextualizeEventFn(assetsMap))
+                //        .withSideInputs(assetsMap))
                 .apply("Write events", CogniteIO.writeEvents()
                         .withProjectConfig(getProjectConfig())
                         .withWriterConfig(WriterConfig.create()
