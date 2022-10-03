@@ -21,7 +21,7 @@ spec:
         - containerPort: 9090
         env:
           - name: GOOGLE_APPLICATION_CREDENTIALS
-            value: "/gcp/eureka-sa-sandbox"
+            value: "/gcp/client-credentials"
         volumeMounts:
             - mountPath: "/config"                  # The file path used by SmallRye to search for config files.
               name: config                          # Name of the "volume" to mount. Specified below in the volumes section.
