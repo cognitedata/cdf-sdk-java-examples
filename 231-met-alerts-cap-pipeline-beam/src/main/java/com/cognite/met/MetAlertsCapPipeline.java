@@ -12,7 +12,9 @@ import com.cognite.client.config.UpsertMode;
 import com.cognite.client.dto.*;
 import com.cognite.client.util.ParseValue;
 import com.google.common.collect.ImmutableList;
+import com.google.protobuf.Struct;
 import com.google.protobuf.Value;
+import com.google.protobuf.util.Structs;
 import com.google.protobuf.util.Values;
 import io.prometheus.client.CollectorRegistry;
 import io.prometheus.client.Gauge;
@@ -117,6 +119,8 @@ public class MetAlertsCapPipeline {
     private static final String stateStoreExtId = "statestore:met-alerts-pipeline";
     private static final String lastUpdatedTimeMetadataKey = "source:lastUpdatedTime";
 
+    private static final String configKeyDataSetExtId = "dataSetExtId";
+
     // global data structures
     private static CogniteClient cogniteClient;
     private static OptionalLong dataSetIntId;
@@ -157,10 +161,11 @@ public class MetAlertsCapPipeline {
         private final Counter noElements = Metrics.counter(ParseRowToEventFn.class, "noElements");
 
         // Side inputs
-        final PCollectionView<Map<String, Long>> dataSetsExtIdMapView;
+        //final PCollectionView<Map<String, Long>> dataSetsExtIdMapView;
+        final PCollectionView<Struct> configView;
 
-        public ParseRowToEventFn(PCollectionView<Map<String, Long>> dataSetsExtIdMapView) {
-            this.dataSetsExtIdMapView = dataSetsExtIdMapView;
+        public ParseRowToEventFn(PCollectionView<Struct> configView) {
+            this.configView = configView;
         }
 
         @ProcessElement
@@ -168,7 +173,8 @@ public class MetAlertsCapPipeline {
                                    OutputReceiver<Event> output,
                                    ProcessContext context) throws Exception {
             noElements.inc();
-            Map<String, Long> dataSetsMap = context.sideInput(dataSetsExtIdMapView);
+            //Map<String, Long> dataSetsMap = context.sideInput(dataSetsExtIdMapView);
+            Struct configStruct = context.sideInput(configView);
             Map<String, Value> columnsMap = element.getColumns().getFieldsMap();
 
             Event.Builder eventBuilder = Event.newBuilder()
@@ -219,11 +225,14 @@ public class MetAlertsCapPipeline {
             eventBuilder.putAllMetadata(metadata);
 
             // If a target dataset has been configured, add it to the event object
+            if (configStruct.getFieldsOrDefault(configKeyDataSetExtId, Values.ofNull()).hasStringValue()) {
+                long dataSetId = Long.parseLong(configStruct.getFieldsOrThrow(configKeyDataSetExtId).getStringValue());
+                eventBuilder.setDataSetId(dataSetId);
+            }
             /*
             if (targetDataSetExtId.isPresent() && dataSetsMap.containsKey(targetDataSetExtId.get())) {
                 eventBuilder.setDataSetId(dataSetsMap.get(targetDataSetExtId.get()));
             }
-
              */
 
             // Build the event object
@@ -282,8 +291,30 @@ public class MetAlertsCapPipeline {
         Pipeline p = Pipeline.create(options);
 
         /*
-        Read the CDF data sets and build an external id to internal id map.
+        Build the config object to be offered to all transforms
          */
+        Struct configStruct = Structs.of(
+                configKeyDataSetExtId, Values.ofNull()
+        );
+        if (getDataSetIntId().isPresent()) {
+            configStruct = configStruct.toBuilder()
+                    .putFields(configKeyDataSetExtId, Values.of(String.valueOf(getDataSetIntId().getAsLong())))
+                    .build();
+        }
+
+        /*
+        Map config settings to a view so they can be accessed by transforms.
+         */
+        PCollectionView<Struct> configView = p
+                .apply("Build Config", Create.of(configStruct))
+                .apply("Log config", MapElements.into(TypeDescriptor.of(Struct.class))
+                        .via(struct -> {
+                            LOG.info("Config object: \n{}", struct.toString());
+                            return struct;
+                        }))
+                .apply("To view", View.asSingleton());
+
+        /*
         PCollectionView<Map<String, Long>> dataSetsExtIdMap = p
                 .apply("Read target data sets", CogniteIO.readDataSets()
                         .withProjectConfig(getProjectConfig())
@@ -302,6 +333,8 @@ public class MetAlertsCapPipeline {
                 .apply("Max per key", Max.perKey())
                 .apply("To map view", View.asMap());
 
+         */
+
         /*
         Reads the existing assets from CDF--will be used for contextualization:
         1) Read the full collection of assets from CDF.
@@ -310,6 +343,7 @@ public class MetAlertsCapPipeline {
         recently updated asset.
         4) Publish the assets to a view so they can be used for memory-based lookup.
          */
+        /*
         PCollectionView<Map<String, Asset>> assetsMap = p
                 .apply("Read assets", CogniteIO.readAssets()
                         .withProjectConfig(getProjectConfig())
@@ -327,6 +361,8 @@ public class MetAlertsCapPipeline {
                         Long.compare(left.getLastUpdatedTime(), right.getLastUpdatedTime())))
                 .apply("To map view", View.asMap());
 
+         */
+
         /*
         The main logic.
 
@@ -343,8 +379,8 @@ public class MetAlertsCapPipeline {
                         .withRequestParameters(RequestParameters.create()
                                 .withDbName(MetAlertsCapPipelineConfig.rawDb)
                                 .withTableName(MetAlertsCapPipelineConfig.rawTable)))
-                .apply("Parse row", ParDo.of(new ParseRowToEventFn(dataSetsExtIdMap))
-                        .withSideInputs(dataSetsExtIdMap))
+                .apply("Parse row", ParDo.of(new ParseRowToEventFn(configView))
+                        .withSideInputs(configView))
                 //.apply("Contextualize event", ParDo.of(new ContextualizeEventFn(assetsMap))
                 //        .withSideInputs(assetsMap))
                 .apply("Write events", CogniteIO.writeEvents()

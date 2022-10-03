@@ -14,7 +14,7 @@
         <maven.compiler.release>17</maven.compiler.release>
 
         <beam.version>2.41.0</beam.version>
-        <beam.connector.version>0.9.39</beam.connector.version>
+        <beam.connector.version>0.9.40</beam.connector.version>
 
         <slf4j-api.version>1.7.36</slf4j-api.version>
         <logback-classic.version>1.2.11</logback-classic.version>
