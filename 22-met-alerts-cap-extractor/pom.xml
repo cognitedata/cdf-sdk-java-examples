@@ -21,7 +21,7 @@
         <io.prometheus.version>0.16.0</io.prometheus.version>
         <jackson-dataformat-xml.version>2.13.4</jackson-dataformat-xml.version>
         <junit.version>5.9.0</junit.version>
-        <jib.maven.plugin.version>3.2.1</jib.maven.plugin.version>
+        <jib.maven.plugin.version>3.3.0</jib.maven.plugin.version>
     </properties>
 
     <dependencies>
