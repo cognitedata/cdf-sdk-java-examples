@@ -45,6 +45,7 @@ public class MetAlertsCapPipeline {
     /*
     CDF project config. From config file / env variables.
      */
+    /*
     private static final String cdfHost =
             ConfigProvider.getConfig().getValue("cognite.host", String.class);
     private static final String cdfProject =
@@ -60,20 +61,28 @@ public class MetAlertsCapPipeline {
     private static final String[] authScopes =
             ConfigProvider.getConfig().getValue("cognite.scopes", String[].class);
 
+     */
+
     /*
     CDF.Raw source table configuration. From config file / env variables.
      */
+    /*
     private static final String rawDb = ConfigProvider.getConfig().getValue("source.rawDb", String.class);
     private static final String rawTable =
             ConfigProvider.getConfig().getValue("source.table", String.class);
 
+     */
+
     /*
     CDF data target configuration. From config file / env variables.
      */
+    /*
     private static final Optional<String> targetDataSetExtId =
             ConfigProvider.getConfig().getOptionalValue("target.dataSetExternalId", String.class);
     private static final Optional<String> extractionPipelineExtId =
             ConfigProvider.getConfig().getOptionalValue("target.extractionPipelineExternalId", String.class);
+
+     */
 
     /*
     Metrics target configuration. From config file / env variables.
@@ -210,9 +219,12 @@ public class MetAlertsCapPipeline {
             eventBuilder.putAllMetadata(metadata);
 
             // If a target dataset has been configured, add it to the event object
+            /*
             if (targetDataSetExtId.isPresent() && dataSetsMap.containsKey(targetDataSetExtId.get())) {
                 eventBuilder.setDataSetId(dataSetsMap.get(targetDataSetExtId.get()));
             }
+
+             */
 
             // Build the event object
             output.output(eventBuilder.build());
@@ -329,8 +341,8 @@ public class MetAlertsCapPipeline {
                         .withReaderConfig(ReaderConfig.create()
                                 .withAppIdentifier(appIdentifier))
                         .withRequestParameters(RequestParameters.create()
-                                .withDbName(rawDb)
-                                .withTableName(rawTable)))
+                                .withDbName(MetAlertsCapPipelineConfig.rawDb)
+                                .withTableName(MetAlertsCapPipelineConfig.rawTable)))
                 .apply("Parse row", ParDo.of(new ParseRowToEventFn(dataSetsExtIdMap))
                         .withSideInputs(dataSetsExtIdMap))
                 //.apply("Contextualize event", ParDo.of(new ContextualizeEventFn(assetsMap))
@@ -369,7 +381,7 @@ public class MetAlertsCapPipeline {
             LOG.error("Unrecoverable error. Will exit. {}", e.toString());
             errorGauge.inc();
             jobFailed = true;
-            if (extractionPipelineExtId.isPresent()) {
+            if (MetAlertsCapPipelineConfig.extractionPipelineExtId.isPresent()) {
                 writeExtractionPipelineRun(ExtractionPipelineRun.Status.FAILURE,
                         String.format("Job failed: %s", e.getMessage()));
             }
@@ -388,20 +400,20 @@ public class MetAlertsCapPipeline {
     Return the ProjectConfig.
      */
     private static ProjectConfig getProjectConfig() throws Exception {
-        if (clientId.isPresent() && clientSecret.isPresent() && aadTenantId.isPresent()) {
+        if (MetAlertsCapPipelineConfig.clientId.isPresent() && MetAlertsCapPipelineConfig.clientSecret.isPresent() && MetAlertsCapPipelineConfig.aadTenantId.isPresent()) {
             return ProjectConfig.create()
-                    .withProject(cdfProject)
-                    .withHost(cdfHost)
-                    .withClientId(clientId.get())
-                    .withClientSecret(clientSecret.get())
-                    .withTokenUrl(TokenUrl.generateAzureAdURL(aadTenantId.get()).toString())
-                    .withAuthScopes(authScopes);
+                    .withProject(MetAlertsCapPipelineConfig.cdfProject)
+                    .withHost(MetAlertsCapPipelineConfig.cdfHost)
+                    .withClientId(MetAlertsCapPipelineConfig.clientId.get())
+                    .withClientSecret(MetAlertsCapPipelineConfig.clientSecret.get())
+                    .withTokenUrl(TokenUrl.generateAzureAdURL(MetAlertsCapPipelineConfig.aadTenantId.get()).toString())
+                    .withAuthScopes(MetAlertsCapPipelineConfig.authScopes);
 
-        } else if (apiKey.isPresent()) {
+        } else if (MetAlertsCapPipelineConfig.apiKey.isPresent()) {
             return ProjectConfig.create()
-                    .withProject(cdfProject)
-                    .withHost(cdfHost)
-                    .withApiKey(apiKey.get());
+                    .withProject(MetAlertsCapPipelineConfig.cdfProject)
+                    .withHost(MetAlertsCapPipelineConfig.cdfHost)
+                    .withApiKey(MetAlertsCapPipelineConfig.apiKey.get());
         } else {
             String message = "Unable to set up the Project Config. No valid authentication configuration.";
             LOG.error(message);
@@ -417,16 +429,16 @@ public class MetAlertsCapPipeline {
      */
     private static OptionalLong getDataSetIntId() throws Exception {
         if (null == dataSetIntId) {
-            if (targetDataSetExtId.isPresent()) {
+            if (MetAlertsCapPipelineConfig.targetDataSetExtId.isPresent()) {
                 // Get the data set id
                 LOG.info("Looking up the data set external id: {}.",
-                        targetDataSetExtId.get());
+                        MetAlertsCapPipelineConfig.targetDataSetExtId.get());
                 List<DataSet> dataSets = getCogniteClient().datasets()
-                        .retrieve(ImmutableList.of(Item.newBuilder().setExternalId(targetDataSetExtId.get()).build()));
+                        .retrieve(ImmutableList.of(Item.newBuilder().setExternalId(MetAlertsCapPipelineConfig.targetDataSetExtId.get()).build()));
 
                 if (dataSets.size() != 1) {
                     // The provided data set external id cannot be found.
-                    String message = String.format("The configured data set external id does not exist: %s", targetDataSetExtId.get());
+                    String message = String.format("The configured data set external id does not exist: %s", MetAlertsCapPipelineConfig.targetDataSetExtId.get());
                     LOG.error(message);
                     throw new Exception(message);
                 }
@@ -452,20 +464,20 @@ public class MetAlertsCapPipeline {
                     .withUpsertMode(UpsertMode.REPLACE)
                     .withAppIdentifier(appIdentifier);
 
-            if (clientId.isPresent() && clientSecret.isPresent() && aadTenantId.isPresent()) {
+            if (MetAlertsCapPipelineConfig.clientId.isPresent() && MetAlertsCapPipelineConfig.clientSecret.isPresent() && MetAlertsCapPipelineConfig.aadTenantId.isPresent()) {
                 cogniteClient = CogniteClient.ofClientCredentials(
-                                clientId.get(),
-                                clientSecret.get(),
-                                TokenUrl.generateAzureAdURL(aadTenantId.get()),
-                                Arrays.asList(authScopes))
-                        .withProject(cdfProject)
-                        .withBaseUrl(cdfHost)
+                                MetAlertsCapPipelineConfig.clientId.get(),
+                                MetAlertsCapPipelineConfig.clientSecret.get(),
+                                TokenUrl.generateAzureAdURL(MetAlertsCapPipelineConfig.aadTenantId.get()),
+                                Arrays.asList(MetAlertsCapPipelineConfig.authScopes))
+                        .withProject(MetAlertsCapPipelineConfig.cdfProject)
+                        .withBaseUrl(MetAlertsCapPipelineConfig.cdfHost)
                         .withClientConfig(clientConfig);
 
-            } else if (apiKey.isPresent()) {
-                cogniteClient = CogniteClient.ofKey(apiKey.get())
-                        .withProject(cdfProject)
-                        .withBaseUrl(cdfHost)
+            } else if (MetAlertsCapPipelineConfig.apiKey.isPresent()) {
+                cogniteClient = CogniteClient.ofKey(MetAlertsCapPipelineConfig.apiKey.get())
+                        .withProject(MetAlertsCapPipelineConfig.cdfProject)
+                        .withBaseUrl(MetAlertsCapPipelineConfig.cdfHost)
                         .withClientConfig(clientConfig);
             } else {
                 String message = "Unable to set up the Cognite Client. No valid authentication configuration.";
@@ -482,10 +494,10 @@ public class MetAlertsCapPipeline {
      */
     private static boolean writeExtractionPipelineRun(ExtractionPipelineRun.Status status, String message) {
         boolean writeSuccess = false;
-        if (extractionPipelineExtId.isPresent()) {
+        if (MetAlertsCapPipelineConfig.extractionPipelineExtId.isPresent()) {
             try {
                 ExtractionPipelineRun pipelineRun = ExtractionPipelineRun.newBuilder()
-                        .setExternalId(extractionPipelineExtId.get())
+                        .setExternalId(MetAlertsCapPipelineConfig.extractionPipelineExtId.get())
                         .setCreatedTime(Instant.now().toEpochMilli())
                         .setStatus(status)
                         .setMessage(message)
