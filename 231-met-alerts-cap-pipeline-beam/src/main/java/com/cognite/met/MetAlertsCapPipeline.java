@@ -503,8 +503,7 @@ public class MetAlertsCapPipeline {
                 cogniteClient = CogniteClient.ofClientCredentials(
                                 MetAlertsCapPipelineConfig.clientId.get(),
                                 MetAlertsCapPipelineConfig.clientSecret.get(),
-                                TokenUrl.generateAzureAdURL(MetAlertsCapPipelineConfig.aadTenantId.get()),
-                                Arrays.asList(MetAlertsCapPipelineConfig.authScopes))
+                                TokenUrl.generateAzureAdURL(MetAlertsCapPipelineConfig.aadTenantId.get()))
                         .withProject(MetAlertsCapPipelineConfig.cdfProject)
                         .withBaseUrl(MetAlertsCapPipelineConfig.cdfHost)
                         .withClientConfig(clientConfig);
