@@ -21,8 +21,8 @@ cognite:
   # The client secret should be specified via an env. variable COGNITE_CLIENTSECRET
   clientSecret:
   azureADTenantId:
-  scopes:
-    - "https://api.cognitedata.com/.default"
+  #scopes:
+  #  - "https://api.cognitedata.com/.default"
 
 # The RSS source configuration
 source:

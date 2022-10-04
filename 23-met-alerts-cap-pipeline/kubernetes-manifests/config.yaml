@@ -4,20 +4,15 @@
 # Information about the Cognite Data Fusion (CDF) project
 cognite:
   # (Optional) CDF deployment target
-  #host: "https://api.cognitedata.com"
-  host: "https://greenfield.cognitedata.com"
+  host: "https://api.cognitedata.com"
 
   # CDF project
   project:
-
   # OpenID Connect client credentials authentication
   clientId:
   # The client secret should be specified via an env. variable COGNITE_CLIENTSECRET
   clientSecret:
   azureADTenantId:
-  # (Optional) Authentication scopes
-  scopes:
-    - "https://api.cognitedata.com/.default"
 
 # State store configuration
 stateStore:
@@ -42,6 +37,6 @@ target:
 # Configuration for metrics.
 metrics:
   enable: false
-  jobName: "my-raw-to-clean-batch-pipeline"
+  jobName: "met-alerts-cap-pipeline"
   pushGateway:
     url: "http://prometheus-pushgateway.victoria-metrics:9091"

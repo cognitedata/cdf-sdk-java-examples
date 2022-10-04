@@ -48,8 +48,6 @@ public class AlertsCapExtractor {
             ConfigProvider.getConfig().getValue("cognite.clientSecret", String.class);
     private static final String aadTenantId =
             ConfigProvider.getConfig().getValue("cognite.azureADTenantId", String.class);
-    private static final String[] authScopes =
-            ConfigProvider.getConfig().getValue("cognite.scopes", String[].class);
 
     /*
     State store configuration. From config file
@@ -395,8 +393,7 @@ public class AlertsCapExtractor {
             cogniteClient = CogniteClient.ofClientCredentials(
                             clientId,
                             clientSecret,
-                            TokenUrl.generateAzureAdURL(aadTenantId),
-                            Arrays.asList(authScopes))
+                            TokenUrl.generateAzureAdURL(aadTenantId))
                     .withProject(cdfProject)
                     .withBaseUrl(cdfHost);
         }

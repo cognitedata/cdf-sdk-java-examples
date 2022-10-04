@@ -16,7 +16,6 @@ cognite:
 
   # CDF project
   project:
-
   # Api key authentication. You can also specify this entry via an env. variable COGNITE_APIKEY
   apiKey:
 
@@ -25,8 +24,8 @@ cognite:
   # The client secret should be specified via an env. variable COGNITE_CLIENTSECRET
   clientSecret:
   azureADTenantId:
-  scopes:
-    - "https://api.cognitedata.com/.default"
+  #scopes:
+  #  - "https://api.cognitedata.com/.default"
 
 # Source raw db and table to read source data from.
 source:
@@ -41,6 +40,6 @@ target:
 # Default configuration for metrics.
 metrics:
   enable: false
-  jobName: "raw-to-clean-batch-pipeline"
+  jobName: "met-alerts-cap-pipeline"
   pushGateway:
     url: "http://stable-prometheus-pushgateway.internal-services:9091"

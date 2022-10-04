@@ -8,18 +8,11 @@ cognite:
 
   # CDF project
   project:
-
-  # Api key authentication. You can also specify this entry via an env. variable COGNITE_APIKEY
-  apiKey:
-
   # OpenID Connect client credentials authentication
   clientId:
   # The client secret should be specified via an env. variable COGNITE_CLIENTSECRET
   clientSecret:
   azureADTenantId:
-  # (Optional) Authentication scopes
-  scopes:
-    - "https://api.cognitedata.com/.default"
 
 # Source raw db and table to read source data from.
 source:
@@ -34,6 +27,6 @@ target:
 # Configuration for metrics.
 metrics:
   enable: false
-  jobName: "my-raw-to-clean-batch-pipeline"
+  jobName: "met-alerts-cap-pipeline"
   pushGateway:
     url: "http://prometheus-pushgateway.victoria-metrics:9091"

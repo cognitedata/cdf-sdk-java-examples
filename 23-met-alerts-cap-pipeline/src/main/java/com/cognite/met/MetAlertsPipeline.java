@@ -42,8 +42,6 @@ public class MetAlertsPipeline {
             ConfigProvider.getConfig().getValue("cognite.clientSecret", String.class);
     private static final String aadTenantId =
             ConfigProvider.getConfig().getValue("cognite.azureADTenantId", String.class);
-    private static final String[] authScopes =
-            ConfigProvider.getConfig().getValue("cognite.scopes", String[].class);
 
     /*
     CDF.Raw source table configuration. From config file / env variables.
@@ -422,8 +420,7 @@ public class MetAlertsPipeline {
             cogniteClient = CogniteClient.ofClientCredentials(
                             clientId,
                             clientSecret,
-                            TokenUrl.generateAzureAdURL(aadTenantId),
-                            Arrays.asList(authScopes))
+                            TokenUrl.generateAzureAdURL(aadTenantId))
                     .withProject(cdfProject)
                     .withBaseUrl(cdfHost)
                     .withClientConfig(clientConfig);

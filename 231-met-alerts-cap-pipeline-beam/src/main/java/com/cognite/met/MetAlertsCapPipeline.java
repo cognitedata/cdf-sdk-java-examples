@@ -442,8 +442,7 @@ public class MetAlertsCapPipeline {
                     .withHost(MetAlertsCapPipelineConfig.cdfHost)
                     .withClientId(MetAlertsCapPipelineConfig.clientId.get())
                     .withClientSecret(MetAlertsCapPipelineConfig.clientSecret.get())
-                    .withTokenUrl(TokenUrl.generateAzureAdURL(MetAlertsCapPipelineConfig.aadTenantId.get()).toString())
-                    .withAuthScopes(MetAlertsCapPipelineConfig.authScopes);
+                    .withTokenUrl(TokenUrl.generateAzureAdURL(MetAlertsCapPipelineConfig.aadTenantId.get()).toString());
 
         } else if (MetAlertsCapPipelineConfig.apiKey.isPresent()) {
             return ProjectConfig.create()
