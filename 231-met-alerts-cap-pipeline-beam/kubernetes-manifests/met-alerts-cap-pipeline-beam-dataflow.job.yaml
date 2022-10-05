@@ -15,7 +15,7 @@ spec:
           - --region=europe-west1
           - --gcpTempLocation=gs://akerbp-dataflow-dev/temp
           - --workerMachineType=e2-standard-2
-          #- --experiments=use_runner_v2
+          - --experiments=use_runner_v2
           #- --dataflowServiceOptions=enable_prime
         ports:
         - containerPort: 9090

@@ -291,7 +291,9 @@ public class MetAlertsCapPipeline {
         Pipeline p = Pipeline.create(options);
 
         /*
-        Build the config object to be offered to all transforms
+        Build the config object to be offered to all transforms.
+
+        The config must be created as a data object 
          */
         Struct configStruct = Structs.of(
                 configKeyDataSetExtId, Values.ofNull()
@@ -315,27 +317,6 @@ public class MetAlertsCapPipeline {
                 .apply("To view", View.asSingleton());
 
         /*
-        PCollectionView<Map<String, Long>> dataSetsExtIdMap = p
-                .apply("Read target data sets", CogniteIO.readDataSets()
-                        .withProjectConfig(getProjectConfig())
-                        .withReaderConfig(ReaderConfig.create()
-                                .withAppIdentifier(appIdentifier)
-                                .enableMetrics(false)))
-                .apply("Select externalId + id", MapElements
-                        .into(TypeDescriptors.kvs(TypeDescriptors.strings(), TypeDescriptors.longs()))
-                        .via((DataSet dataSet) -> {
-                            LOG.info("Dataset - id: {}, extId: {}, name: {}",
-                                    dataSet.getId(),
-                                    dataSet.getExternalId(),
-                                    dataSet.getName());
-                            return KV.of(dataSet.getExternalId(), dataSet.getId());
-                        }))
-                .apply("Max per key", Max.perKey())
-                .apply("To map view", View.asMap());
-
-         */
-
-        /*
         Reads the existing assets from CDF--will be used for contextualization:
         1) Read the full collection of assets from CDF.
         2) Minimize the size of the asset lookup. For performance optimization.
@@ -343,7 +324,6 @@ public class MetAlertsCapPipeline {
         recently updated asset.
         4) Publish the assets to a view so they can be used for memory-based lookup.
          */
-        /*
         PCollectionView<Map<String, Asset>> assetsMap = p
                 .apply("Read assets", CogniteIO.readAssets()
                         .withProjectConfig(getProjectConfig())
@@ -360,8 +340,6 @@ public class MetAlertsCapPipeline {
                 .apply("Select newest asset per key", Max.perKey((Comparator<Asset> & Serializable) (left, right) ->
                         Long.compare(left.getLastUpdatedTime(), right.getLastUpdatedTime())))
                 .apply("To map view", View.asMap());
-
-         */
 
         /*
         The main logic.
