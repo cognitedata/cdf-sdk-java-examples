@@ -24,8 +24,7 @@ import org.apache.beam.sdk.PipelineResult;
 import org.apache.beam.sdk.coders.KvCoder;
 import org.apache.beam.sdk.coders.StringUtf8Coder;
 import org.apache.beam.sdk.extensions.protobuf.ProtoCoder;
-import org.apache.beam.sdk.metrics.Counter;
-import org.apache.beam.sdk.metrics.Metrics;
+import org.apache.beam.sdk.metrics.*;
 import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
 import org.apache.beam.sdk.transforms.*;
@@ -36,6 +35,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.Serializable;
 import java.net.URL;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.*;
@@ -45,45 +45,8 @@ public class MetAlertsCapPipeline {
     private static Logger LOG = LoggerFactory.getLogger(MetAlertsCapPipeline.class);
 
     /*
-    CDF project config. From config file / env variables.
-     */
-    /*
-    private static final String cdfHost =
-            ConfigProvider.getConfig().getValue("cognite.host", String.class);
-    private static final String cdfProject =
-            ConfigProvider.getConfig().getValue("cognite.project", String.class);
-    private static final Optional<String> apiKey =
-            ConfigProvider.getConfig().getOptionalValue("cognite.apiKey", String.class);
-    private static final Optional<String> clientId =
-            ConfigProvider.getConfig().getOptionalValue("cognite.clientId", String.class);
-    private static final Optional<String> clientSecret =
-            ConfigProvider.getConfig().getOptionalValue("cognite.clientSecret", String.class);
-    private static final Optional<String> aadTenantId =
-            ConfigProvider.getConfig().getOptionalValue("cognite.azureADTenantId", String.class);
-    private static final String[] authScopes =
-            ConfigProvider.getConfig().getValue("cognite.scopes", String[].class);
-
-     */
-
-    /*
-    CDF.Raw source table configuration. From config file / env variables.
-     */
-    /*
-    private static final String rawDb = ConfigProvider.getConfig().getValue("source.rawDb", String.class);
-    private static final String rawTable =
-            ConfigProvider.getConfig().getValue("source.table", String.class);
-
-     */
-
-    /*
-    CDF data target configuration. From config file / env variables.
-     */
-    /*
-    private static final Optional<String> targetDataSetExtId =
-            ConfigProvider.getConfig().getOptionalValue("target.dataSetExternalId", String.class);
-    private static final Optional<String> extractionPipelineExtId =
-            ConfigProvider.getConfig().getOptionalValue("target.extractionPipelineExternalId", String.class);
-
+    All configuration settings from file or env variables are hosted in a separate
+    config class: MetAlertsCapPipelineConfig
      */
 
     /*
@@ -158,7 +121,7 @@ public class MetAlertsCapPipeline {
         List<String> excludeColumns = List.of();
 
         // Metrics
-        private final Counter noElements = Metrics.counter(ParseRowToEventFn.class, "noElements");
+        private final Counter noElements = Metrics.counter(MetAlertsCapPipeline.class, "noElements");
 
         // Side inputs
         //final PCollectionView<Map<String, Long>> dataSetsExtIdMapView;
@@ -374,23 +337,58 @@ public class MetAlertsCapPipeline {
      */
     public static void main(String[] args) {
         boolean jobFailed = false;
+        // Prepare the job start metrics
+        Gauge.Timer jobDurationTimer = jobDurationSeconds.startTimer();
+        jobStartTimeStamp.setToCurrentTime();
+
         try {
             PipelineOptions options =
                     PipelineOptionsFactory.fromArgs(args).withValidation().as(PipelineOptions.class);
 
+            LOG.info("Starting pipeline...");
             PipelineResult result = runMetAlertsCapPipeline(options);
-            LOG.info("Started pipeline");
             result.waitUntilFinish();
 
             LOG.info("Pipeline finished with status: {}", result.getState().toString());
-            long totalMemMb = Runtime.getRuntime().totalMemory() / (1024 * 1024);
-            long freeMemMb = Runtime.getRuntime().freeMemory() / (1024 * 1024);
-            long usedMemMb = totalMemMb - freeMemMb;
-            String logMessage = String.format("----------------------- memory stats --------------------- %n"
-                    + "Total memory: %d MB %n"
-                    + "Used memory: %d MB %n"
-                    + "Free memory: %d MB", totalMemMb, usedMemMb, freeMemMb);
-            LOG.info(logMessage);
+            if (result.getState() != PipelineResult.State.DONE) {
+                // The Beam pipeline did not complete successfully
+                throw new Exception(String.format("Job failed. Beam pipeline completed with status: %s", result.getState().toString()));
+            }
+
+            LOG.info("Collect metrics from the Beam pipeline");
+            MetricQueryResults metrics = result
+                    .metrics()
+                    .queryMetrics(MetricsFilter.builder()
+                            .addNameFilter(MetricNameFilter.inNamespace(MetAlertsCapPipeline.class))
+                            .build());
+
+            for (MetricResult<Long> counter: metrics.getCounters()) {
+                LOG.info(counter.getName() + ":" + counter.getAttempted());
+            }
+            for (MetricResult<DistributionResult> distribution : metrics.getDistributions()) {
+                LOG.info(distribution.getName() + ":" + distribution.getAttempted().getMean());
+            }
+
+            // All done
+            jobDurationTimer.setDuration();
+            LOG.info("Finished processing {} rows from raw. Duration {}",
+                    noElementsGauge.get(),
+                    Duration.ofSeconds((long) jobDurationSeconds.get()));
+
+            // The job completion metric is only added to the registry after job success,
+            // so that a previous success in the Pushgateway isn't overwritten on failure.
+            Gauge jobCompletionTimeStamp = Gauge.build()
+                    .name("job_completion_timestamp").help("Job completion time stamp").register(collectorRegistry);
+            jobCompletionTimeStamp.setToCurrentTime();
+
+            // Report success status to the extraction pipeline
+            if (MetAlertsCapPipelineConfig.extractionPipelineExtId.isPresent()) {
+                writeExtractionPipelineRun(ExtractionPipelineRun.Status.SUCCESS,
+                        String.format("Upserted %d events to CDF. %d events could be linked to assets.",
+                                (int) noElementsGauge.get(),
+                                (int) noElementsContextualizedGauge.get()));
+            }
+
         } catch (Exception e) {
             LOG.error("Unrecoverable error. Will exit. {}", e.toString());
             errorGauge.inc();
