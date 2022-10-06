@@ -121,7 +121,7 @@ public class MetAlertsCapPipeline {
         List<String> excludeColumns = List.of();
 
         // Metrics
-        private final Counter noElements = Metrics.counter(MetAlertsCapPipeline.class, "noElements");
+        private final Counter noElements = Metrics.counter("cognite", "noElements");
 
         // Side inputs
         //final PCollectionView<Map<String, Long>> dataSetsExtIdMapView;
@@ -248,7 +248,11 @@ public class MetAlertsCapPipeline {
     }
 
     /*
-    The main logic to execute.
+    The Beam data pipeline.
+
+    This method hosts the main pipeline definition. It is defined as a direct acyclic graph (DAG) using the
+    Beam SDK building blocks. The pipeline supports very large scale distributed execution on a variety of
+    hosting environments with Dataflow, Flink and Spark being the most prominent.
      */
     static PipelineResult runMetAlertsCapPipeline(PipelineOptions options) throws Exception {
         Pipeline p = Pipeline.create(options);
@@ -333,7 +337,7 @@ public class MetAlertsCapPipeline {
     }
 
     /*
-    The entry point of the code. It executes the main logic and push job metrics upon completion.
+    The entry point of the code. It orchestrates the main logic and push job metrics upon completion.
      */
     public static void main(String[] args) {
         boolean jobFailed = false;
@@ -342,6 +346,7 @@ public class MetAlertsCapPipeline {
         jobStartTimeStamp.setToCurrentTime();
 
         try {
+            // Read arguments and pass them to the pipeline as options
             PipelineOptions options =
                     PipelineOptionsFactory.fromArgs(args).withValidation().as(PipelineOptions.class);
 
@@ -356,17 +361,23 @@ public class MetAlertsCapPipeline {
             }
 
             LOG.info("Collect metrics from the Beam pipeline");
+            Map<String, Gauge> gaugeMap = Map.of(
+                    "cognite" + ":" + "noElements", noElementsGauge
+            );
             MetricQueryResults metrics = result
                     .metrics()
                     .queryMetrics(MetricsFilter.builder()
-                            .addNameFilter(MetricNameFilter.inNamespace(MetAlertsCapPipeline.class))
+                            .addNameFilter(MetricNameFilter.inNamespace("cognite"))
                             .build());
 
             for (MetricResult<Long> counter: metrics.getCounters()) {
-                LOG.info(counter.getName() + ":" + counter.getAttempted());
+                LOG.info(counter.getName() + ":" + counter.getCommitted());
+                if (gaugeMap.containsKey(counter.getName())) {
+                    gaugeMap.get(counter.getName()).set(counter.getCommitted());
+                }
             }
             for (MetricResult<DistributionResult> distribution : metrics.getDistributions()) {
-                LOG.info(distribution.getName() + ":" + distribution.getAttempted().getMean());
+                LOG.info(distribution.getName() + ":" + distribution.getCommitted().getMean());
             }
 
             // All done
