@@ -14,11 +14,11 @@ on:
         required: false
         type: string
 jobs:
-  build:
+  build-skaffold:
     runs-on: ubuntu-latest
-    defaults:
-      run: 
-        working-directory: ${{ inputs.repositoryFolder }} 
+    #defaults:
+    #  run: 
+    #    working-directory: ${{ inputs.repositoryFolder }} 
     steps:
       - uses: actions/checkout@v2
       - name: Set up JDK ${{ inputs.javaVersion }}
@@ -29,6 +29,6 @@ jobs:
       - name: Build image with Skaffold
         uses: hiberbee/github-action-skaffold@1.23.0
         with:
-#          working-directory: ${{ inputs.repositoryFolder }}
+          working-directory: ${{ inputs.repositoryFolder }}
           command: build
           push: false
