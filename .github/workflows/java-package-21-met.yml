@@ -1,12 +1,14 @@
 name: java-pr-ci-21-met
 on:
   workflow_dispatch:
-  pull_request:
+  push:
+    branches:
+      - "master"
     paths:
       - "21-met-alerts-rss-extractor/**"
       
 jobs:
-  build-21-rss-extractor:
-    uses: ./.github/workflows/java-maven-skaffold-build.yml
+  package-21-rss-extractor:
+    uses: ./.github/workflows/java-maven-skaffold-build-push-docker.yml
     with:
       repositoryFolder: "./21-met-alerts-rss-extractor/" 
