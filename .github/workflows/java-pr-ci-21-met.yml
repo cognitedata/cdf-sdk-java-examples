@@ -9,4 +9,4 @@ jobs:
   build-21-rss-extractor:
     uses: ./.github/workflows/java-maven-skaffold-build.yml
     with:
-      repositoryFolder: "./21-met-metalerts-rss-extractor/" 
+      repositoryFolder: "./21-met-alerts-rss-extractor/" 
