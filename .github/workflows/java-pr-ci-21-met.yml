@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
   pull_request:
     paths:
-      - "21-met-metalerts-rss-extractor/**"
+      - "21-met-alerts-rss-extractor/**"
       
 jobs:
   build-21-rss-extractor:
