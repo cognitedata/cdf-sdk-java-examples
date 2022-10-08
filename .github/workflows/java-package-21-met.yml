@@ -1,4 +1,4 @@
-name: java-pr-ci-21-met
+name: java-package-21-met
 on:
   workflow_dispatch:
   push:

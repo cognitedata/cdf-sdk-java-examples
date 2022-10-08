@@ -1,5 +1,5 @@
 # Builds 
-name: java-maven-skaffold-build
+name: java-maven-skaffold-build-push-docker
 on:
   workflow_call:
     inputs:
