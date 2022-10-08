@@ -37,8 +37,6 @@ public class AlertsRssExtractor {
             ConfigProvider.getConfig().getValue("cognite.clientSecret", String.class);
     private static final String aadTenantId =
             ConfigProvider.getConfig().getValue("cognite.azureADTenantId", String.class);
-    private static final String[] authScopes =
-            ConfigProvider.getConfig().getValue("cognite.scopes", String[].class);
 
     /*
     Source RSS config
@@ -217,8 +215,7 @@ public class AlertsRssExtractor {
             cogniteClient = CogniteClient.ofClientCredentials(
                             clientId,
                             clientSecret,
-                            TokenUrl.generateAzureAdURL(aadTenantId),
-                            Arrays.asList(authScopes))
+                            TokenUrl.generateAzureAdURL(aadTenantId))
                     .withProject(cdfProject)
                     .withBaseUrl(cdfHost);
         }

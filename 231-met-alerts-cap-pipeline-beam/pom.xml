@@ -5,7 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>com.cognite</groupId>
-    <artifactId>raw-to-clean-batch-job</artifactId>
+    <artifactId>met-alerts-cap-pipeline-beam</artifactId>
     <version>1.0-SNAPSHOT</version>
 
     <properties>
@@ -13,19 +13,55 @@
         <maven.compiler.target>17</maven.compiler.target>
         <maven.compiler.release>17</maven.compiler.release>
 
-        <cdf-sdk-java.version>1.17.0</cdf-sdk-java.version>
-        <slf4j-api.version>2.0.1</slf4j-api.version>
-        <logback-classic.version>1.4.1</logback-classic.version>
+        <beam.version>2.41.0</beam.version>
+        <beam.connector.version>0.9.40</beam.connector.version>
+
+        <slf4j-api.version>1.7.36</slf4j-api.version>
+        <logback-classic.version>1.2.11</logback-classic.version>
         <smallrye.config.version>2.12.1</smallrye.config.version>
         <io.prometheus.version>0.16.0</io.prometheus.version>
         <jib.maven.plugin.version>3.3.0</jib.maven.plugin.version>
     </properties>
 
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>com.google.cloud</groupId>
+                <artifactId>libraries-bom</artifactId>
+                <version>25.4.0</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
     <dependencies>
         <dependency>
             <groupId>com.cognite</groupId>
-            <artifactId>cdf-sdk-java</artifactId>
-            <version>${cdf-sdk-java.version}</version>
+            <artifactId>beam-connector-java</artifactId>
+            <version>${beam.connector.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.beam</groupId>
+            <artifactId>beam-sdks-java-core</artifactId>
+            <version>${beam.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.beam</groupId>
+            <artifactId>beam-runners-direct-java</artifactId>
+            <version>${beam.version}</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.beam</groupId>
+            <artifactId>beam-runners-flink-1.14</artifactId>
+            <version>${beam.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.beam</groupId>
+            <artifactId>beam-runners-google-cloud-dataflow-java</artifactId>
+            <version>${beam.version}</version>
+            <scope>compile</scope>
         </dependency>
         <dependency>
             <groupId>org.slf4j</groupId>
@@ -46,12 +82,6 @@
         <dependency>
             <groupId>io.prometheus</groupId>
             <artifactId>simpleclient</artifactId>
-            <version>${io.prometheus.version}</version>
-        </dependency>
-        <!-- Hotspot JVM metrics-->
-        <dependency>
-            <groupId>io.prometheus</groupId>
-            <artifactId>simpleclient_hotspot</artifactId>
             <version>${io.prometheus.version}</version>
         </dependency>
         <!-- Pushgateway exposition-->

@@ -1,12 +1,12 @@
 apiVersion: skaffold/v2beta29
 kind: Config
 metadata:
-  name: beam-pipeline-example
+  name: met-alerts-cap-pipeline-beam
 build:
   local:
     push: false
   artifacts:
-  - image: beam-pipeline-example
+  - image: met-alerts-cap-pipeline-beam
     context: .
     jib:
       fromImage: "gcr.io/distroless/java17-debian11"
@@ -26,4 +26,4 @@ profiles:
     patches:
       - op: replace
         path: /build/artifacts/0/image
-        value: your-image-registry/beam-pipeline-example  # add your image registry as prefix here
+        value: your-image-registry/met-alerts-cap-pipeline-beam  # add your image registry as prefix here

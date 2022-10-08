@@ -42,8 +42,6 @@ public class MetAlertsPipeline {
             ConfigProvider.getConfig().getValue("cognite.clientSecret", String.class);
     private static final String aadTenantId =
             ConfigProvider.getConfig().getValue("cognite.azureADTenantId", String.class);
-    private static final String[] authScopes =
-            ConfigProvider.getConfig().getValue("cognite.scopes", String[].class);
 
     /*
     CDF.Raw source table configuration. From config file / env variables.
@@ -59,11 +57,6 @@ public class MetAlertsPipeline {
             ConfigProvider.getConfig().getOptionalValue("target.dataSetExternalId", String.class);
     private static final Optional<String> extractionPipelineExtId =
             ConfigProvider.getConfig().getOptionalValue("target.extractionPipelineExternalId", String.class);
-
-    /*
-    Pipeline configuration
-     */
-    private static final String extIdPrefix = "source-name:";
 
     /*
     Metrics target configuration. From config file / env variables.
@@ -103,6 +96,8 @@ public class MetAlertsPipeline {
     /*
     Configuration settings--not from file
      */
+    private static final String appIdentifier = "met-alerts-pipeline";
+    private static final String extIdPrefix = "met-cap-id:";
     private static final String stateStoreExtId = "statestore:met-alerts-pipeline";
     private static final String lastUpdatedTimeMetadataKey = "source:lastUpdatedTime";
 
@@ -227,7 +222,7 @@ public class MetAlertsPipeline {
         The parsing logic.
          */
         Event.Builder eventBuilder = Event.newBuilder()
-                .setExternalId(row.getKey());
+                .setExternalId(extIdPrefix + row.getKey());
         Map<String, Value> columnsMap = row.getColumns().getFieldsMap();
 
         // Add the mandatory fields
@@ -419,13 +414,13 @@ public class MetAlertsPipeline {
         if (null == cogniteClient) {
             // The client has not been instantiated yet
             ClientConfig clientConfig = ClientConfig.create()
-                    .withUpsertMode(UpsertMode.REPLACE);
+                    .withUpsertMode(UpsertMode.REPLACE)
+                    .withAppIdentifier(appIdentifier);
 
             cogniteClient = CogniteClient.ofClientCredentials(
                             clientId,
                             clientSecret,
-                            TokenUrl.generateAzureAdURL(aadTenantId),
-                            Arrays.asList(authScopes))
+                            TokenUrl.generateAzureAdURL(aadTenantId))
                     .withProject(cdfProject)
                     .withBaseUrl(cdfHost)
                     .withClientConfig(clientConfig);

@@ -4,23 +4,15 @@
 # Information about the Cognite Data Fusion (CDF) project
 cognite:
   # (Optional) CDF deployment target
-  #host: "https://api.cognitedata.com"
-  host: "https://greenfield.cognitedata.com"
+  host: "https://api.cognitedata.com"
 
   # CDF project
-  project: kjetilh-greenfield
-
-  # Api key authentication. You can also specify this entry via an env. variable COGNITE_APIKEY
-  apiKey:
-
+  project:
   # OpenID Connect client credentials authentication
   clientId:
   # The client secret should be specified via an env. variable COGNITE_CLIENTSECRET
   clientSecret:
   azureADTenantId:
-  # (Optional) Authentication scopes
-  scopes:
-    - "https://api.cognitedata.com/.default"
 
 # Source raw db and table to read source data from.
 source:

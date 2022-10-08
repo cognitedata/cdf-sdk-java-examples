@@ -16,14 +16,13 @@ cognite:
 
   # CDF project
   project:
-
   # OpenID Connect client credentials authentication
   clientId:
   # The client secret should be specified via an env. variable COGNITE_CLIENTSECRET
   clientSecret:
   azureADTenantId:
-  scopes:
-    - "https://api.cognitedata.com/.default"
+  #scopes:
+  #  - "https://api.cognitedata.com/.default"
 
 # State store configuration
 stateStore:
@@ -48,6 +47,6 @@ target:
 # Default configuration for metrics.
 metrics:
   enable: false
-  jobName: "raw-to-clean-batch-pipeline"
+  jobName: "met-alerts-cap-pipeline"
   pushGateway:
     url: "http://stable-prometheus-pushgateway.internal-services:9091"
