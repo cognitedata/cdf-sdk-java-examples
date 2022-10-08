@@ -11,4 +11,5 @@ jobs:
   package-21-rss-extractor:
     uses: ./.github/workflows/java-maven-skaffold-build-push-docker.yml
     with:
-      repositoryFolder: "./21-met-alerts-rss-extractor/" 
+      repositoryFolder: "./21-met-alerts-rss-extractor/"
+    secrets: inherit
