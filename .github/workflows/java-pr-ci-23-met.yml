@@ -1,0 +1,12 @@
+name: java-pr-ci-23-met
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "23-met-alerts-cap-pipeline/**"
+      
+jobs:
+  build-23-cap-pipeline:
+    uses: ./.github/workflows/java-maven-skaffold-build.yml
+    with:
+      repositoryFolder: "./23-met-alerts-cap-pipeline/" 

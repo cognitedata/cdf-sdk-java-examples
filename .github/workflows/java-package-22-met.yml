@@ -1,15 +1,15 @@
-name: java-package-21-met
+name: java-package-22-met
 on:
   workflow_dispatch:
   push:
     branches:
       - "master"
     paths:
-      - "21-met-alerts-rss-extractor/**"
+      - "22-met-alerts-cap-extractor/**"
       
 jobs:
-  package-21-rss-extractor:
+  package-22-cap-extractor:
     uses: ./.github/workflows/java-maven-skaffold-build-push-docker.yml
     with:
-      repositoryFolder: "./21-met-alerts-rss-extractor/"
+      repositoryFolder: "./22-met-alerts-cap-extractor/"
     secrets: inherit
