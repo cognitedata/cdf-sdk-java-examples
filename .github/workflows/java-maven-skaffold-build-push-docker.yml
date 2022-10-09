@@ -38,4 +38,4 @@ jobs:
           working-directory: ${{ inputs.repositoryFolder }}
           command: build
           push: true
-          repository: kjetilh33/public
+          repository: kjetilh33
