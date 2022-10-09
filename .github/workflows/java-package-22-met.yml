@@ -1,0 +1,15 @@
+name: java-package-22-met
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "master"
+    paths:
+      - "22-met-alerts-cap-extractor/**"
+      
+jobs:
+  package-22-cap-extractor:
+    uses: ./.github/workflows/java-maven-skaffold-build-push-docker.yml
+    with:
+      repositoryFolder: "./22-met-alerts-cap-extractor/"
+    secrets: inherit

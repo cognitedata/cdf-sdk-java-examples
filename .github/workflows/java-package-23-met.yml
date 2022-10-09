@@ -1,0 +1,15 @@
+name: java-package-23-met
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "master"
+    paths:
+      - "23-met-alerts-cap-pipeline/**"
+      
+jobs:
+  package-23-cap-pipeline:
+    uses: ./.github/workflows/java-maven-skaffold-build-push-docker.yml
+    with:
+      repositoryFolder: "./23-met-alerts-cap-pipeline/"
+    secrets: inherit
