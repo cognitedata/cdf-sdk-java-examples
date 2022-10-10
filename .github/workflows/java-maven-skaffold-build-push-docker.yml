@@ -39,3 +39,4 @@ jobs:
           command: build
           push: true
           repository: kjetilh33
+          tag: "latest"
