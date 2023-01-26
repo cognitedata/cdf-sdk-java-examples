@@ -370,12 +370,18 @@ public class MetAlertsCapPipeline {
                             .addNameFilter(MetricNameFilter.inNamespace("cognite"))
                             .build());
 
+            LOG.info("The gaugeMap key set: {}", gaugeMap.keySet());
+
+            LOG.info("Log counter metrics");
             for (MetricResult<Long> counter: metrics.getCounters()) {
                 LOG.info(counter.getName() + ":" + counter.getCommitted());
                 if (gaugeMap.containsKey(counter.getName())) {
+                    LOG.info("Got a match on a counter. Will add to prom metrics");
                     gaugeMap.get(counter.getName()).set(counter.getCommitted());
                 }
             }
+
+            LOG.info("Log distribution metrics");
             for (MetricResult<DistributionResult> distribution : metrics.getDistributions()) {
                 LOG.info(distribution.getName() + ":" + distribution.getCommitted().getMean());
             }
