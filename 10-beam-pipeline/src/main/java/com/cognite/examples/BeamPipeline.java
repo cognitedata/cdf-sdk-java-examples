@@ -218,7 +218,7 @@ public class BeamPipeline {
     /*
     The main logic to execute.
      */
-    static PipelineResult runWordCount(PipelineOptions options) throws Exception {
+    static PipelineResult runBeamPipeline(PipelineOptions options) throws Exception {
         Pipeline p = Pipeline.create(options);
 
         /*
@@ -281,8 +281,8 @@ public class BeamPipeline {
                         .withReaderConfig(ReaderConfig.create()
                                 .withAppIdentifier(appIdentifier))
                         .withRequestParameters(RequestParameters.create()
-                                .withDbName(rawDb)
-                                .withTableName(rawTable)))
+                                .withDbName(BeamPipelineConfig.rawDb)
+                                .withTableName(BeamPipelineConfig.rawTable)))
                 .apply("Parse row", ParDo.of(new ParseRowToEventFn(dataSetsExtIdMap))
                         .withSideInputs(dataSetsExtIdMap))
                 .apply("Contextualize event", ParDo.of(new ContextualizeEventFn(assetsMap))
@@ -310,7 +310,7 @@ public class BeamPipeline {
                     PipelineOptionsFactory.fromArgs(args).withValidation().as(PipelineOptions.class);
 
             LOG.info("Starting pipeline...");
-            PipelineResult result = runMetAlertsCapPipeline(options);
+            PipelineResult result = runBeamPipeline(options);
             result.waitUntilFinish();
 
             LOG.info("Pipeline finished with status: {}", result.getState().toString());
