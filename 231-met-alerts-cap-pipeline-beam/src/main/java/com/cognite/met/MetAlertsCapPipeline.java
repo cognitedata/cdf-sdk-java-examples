@@ -362,7 +362,7 @@ public class MetAlertsCapPipeline {
 
             LOG.info("Collect metrics from the Beam pipeline");
             Map<String, Gauge> gaugeMap = Map.of(
-                    "cognite" + ":" + "noElements", noElementsGauge
+                    "noElements", noElementsGauge
             );
             MetricQueryResults metrics = result
                     .metrics()
@@ -374,16 +374,16 @@ public class MetAlertsCapPipeline {
 
             LOG.info("Log counter metrics");
             for (MetricResult<Long> counter: metrics.getCounters()) {
-                LOG.info(counter.getName() + ":" + counter.getCommitted());
-                if (gaugeMap.containsKey(counter.getName())) {
+                LOG.info(counter.getName().getName() + ":" + counter.getAttempted());
+                if (gaugeMap.containsKey(counter.getName().getName())) {
                     LOG.info("Got a match on a counter. Will add to prom metrics");
-                    gaugeMap.get(counter.getName()).set(counter.getCommitted());
+                    gaugeMap.get(counter.getName().getName()).set(counter.getAttempted());
                 }
             }
 
             LOG.info("Log distribution metrics");
             for (MetricResult<DistributionResult> distribution : metrics.getDistributions()) {
-                LOG.info(distribution.getName() + ":" + distribution.getCommitted().getMean());
+                LOG.info(distribution.getName().getName() + ":" + distribution.getAttempted().getMean());
             }
 
             // All done
