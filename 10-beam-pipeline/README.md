@@ -14,12 +14,12 @@ The minimum requirements for running the module locally:
 
 On Linux/MaxOS:
 ```console
-$ mvn compile exec:java -Dexec.mainClass="com.cognite.examples.Beam"
+$ mvn compile exec:java -Dexec.mainClass="com.cognite.examples.BeamPipeline"
 ```
 
 On Windows Powershell:
 ```ps
-> mvn compile exec:java -D exec.mainClass="com.cognite.examples.Beam"
+> mvn compile exec:java -D exec.mainClass="com.cognite.examples.BeamPipeline"
 ```
 
 ### Run as a container on Kubernetes
