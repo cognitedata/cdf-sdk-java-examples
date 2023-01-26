@@ -50,16 +50,6 @@ public class MetAlertsCapPipeline {
      */
 
     /*
-    Metrics target configuration. From config file / env variables.
-     */
-    private static final boolean enableMetrics =
-            ConfigProvider.getConfig().getValue("metrics.enable", Boolean.class);
-    private static final String metricsJobName =
-            ConfigProvider.getConfig().getValue("metrics.jobName", String.class);
-    private static final Optional<String> pushGatewayUrl =
-            ConfigProvider.getConfig().getOptionalValue("metrics.pushGateway.url", String.class);
-
-    /*
     Metrics section. Define the metrics to expose.
      */
     private static final CollectorRegistry collectorRegistry = new CollectorRegistry();
@@ -415,7 +405,7 @@ public class MetAlertsCapPipeline {
                         String.format("Job failed: %s", e.getMessage()));
             }
         } finally {
-            if (enableMetrics) {
+            if (MetAlertsCapPipelineConfig.enableMetrics) {
                 pushMetrics();
             }
             if (jobFailed) {
@@ -548,11 +538,11 @@ public class MetAlertsCapPipeline {
      */
     private static boolean pushMetrics() {
         boolean isSuccess = false;
-        if (pushGatewayUrl.isPresent()) {
+        if (MetAlertsCapPipelineConfig.pushGatewayUrl.isPresent()) {
             try {
-                LOG.info("Pushing metrics to {}", pushGatewayUrl);
-                PushGateway pg = new PushGateway(new URL(pushGatewayUrl.get())); //9091
-                pg.pushAdd(collectorRegistry, metricsJobName);
+                LOG.info("Pushing metrics to {}", MetAlertsCapPipelineConfig.pushGatewayUrl);
+                PushGateway pg = new PushGateway(new URL(MetAlertsCapPipelineConfig.pushGatewayUrl.get())); //9091
+                pg.pushAdd(collectorRegistry, MetAlertsCapPipelineConfig.metricsJobName);
                 isSuccess = true;
             } catch (Exception e) {
                 LOG.warn("Error when trying to push metrics: {}", e.toString());
