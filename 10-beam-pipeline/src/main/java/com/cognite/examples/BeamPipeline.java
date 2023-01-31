@@ -36,6 +36,8 @@ import java.time.Instant;
 import java.util.*;
 import java.util.stream.Collectors;
 
+import static com.cognite.examples.BeamPipelineConfig.*;
+
 public class BeamPipeline {
     private static Logger LOG = LoggerFactory.getLogger(BeamPipeline.class);
 
@@ -387,23 +389,14 @@ public class BeamPipeline {
     /*
     Return the ProjectConfig.
      */
-    /*
-    Return the ProjectConfig.
-     */
     private static ProjectConfig getProjectConfig() throws Exception {
-        if (BeamPipelineConfig.clientId.isPresent() && BeamPipelineConfig.clientSecret.isPresent() && BeamPipelineConfig.aadTenantId.isPresent()) {
+        if (clientId.isPresent() && clientSecret.isPresent() && aadTenantId.isPresent()) {
             return ProjectConfig.create()
                     .withProject(BeamPipelineConfig.cdfProject)
                     .withHost(BeamPipelineConfig.cdfHost)
                     .withClientId(BeamPipelineConfig.clientId.get())
                     .withClientSecret(BeamPipelineConfig.clientSecret.get())
                     .withTokenUrl(TokenUrl.generateAzureAdURL(BeamPipelineConfig.aadTenantId.get()).toString());
-
-        } else if (BeamPipelineConfig.apiKey.isPresent()) {
-            return ProjectConfig.create()
-                    .withProject(BeamPipelineConfig.cdfProject)
-                    .withHost(BeamPipelineConfig.cdfHost)
-                    .withApiKey(BeamPipelineConfig.apiKey.get());
         } else {
             String message = "Unable to set up the Project Config. No valid authentication configuration.";
             LOG.error(message);
@@ -448,31 +441,23 @@ public class BeamPipeline {
     initial instantiation, the client will be cached and reused.
      */
     private static CogniteClient getCogniteClient() throws Exception {
-        if (null == cogniteClient) {
+        if (null == cogniteClient && clientId.isPresent() && clientSecret.isPresent() && aadTenantId.isPresent()) {
             // The client has not been instantiated yet
             ClientConfig clientConfig = ClientConfig.create()
                     .withUpsertMode(UpsertMode.REPLACE)
                     .withAppIdentifier(appIdentifier);
 
-            if (BeamPipelineConfig.clientId.isPresent() && BeamPipelineConfig.clientSecret.isPresent() && BeamPipelineConfig.aadTenantId.isPresent()) {
-                cogniteClient = CogniteClient.ofClientCredentials(
-                                BeamPipelineConfig.clientId.get(),
-                                BeamPipelineConfig.clientSecret.get(),
-                                TokenUrl.generateAzureAdURL(BeamPipelineConfig.aadTenantId.get()))
-                        .withProject(BeamPipelineConfig.cdfProject)
-                        .withBaseUrl(BeamPipelineConfig.cdfHost)
-                        .withClientConfig(clientConfig);
-
-            } else if (BeamPipelineConfig.apiKey.isPresent()) {
-                cogniteClient = CogniteClient.ofKey(BeamPipelineConfig.apiKey.get())
-                        .withProject(BeamPipelineConfig.cdfProject)
-                        .withBaseUrl(BeamPipelineConfig.cdfHost)
-                        .withClientConfig(clientConfig);
-            } else {
-                String message = "Unable to set up the Cognite Client. No valid authentication configuration.";
-                LOG.error(message);
-                throw new Exception(message);
-            }
+            cogniteClient = CogniteClient.ofClientCredentials(
+                            clientId.get(),
+                            clientSecret.get(),
+                            TokenUrl.generateAzureAdURL(aadTenantId.get()))
+                    .withProject(cdfProject)
+                    .withBaseUrl(cdfHost)
+                    .withClientConfig(clientConfig);
+        } else {
+            String message = "Unable to set up the Cognite Client. No valid authentication configuration.";
+            LOG.error(message);
+            throw new Exception(message);
         }
 
         return cogniteClient;

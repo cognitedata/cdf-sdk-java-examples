@@ -12,8 +12,6 @@ public class BeamPipelineConfig {
             ConfigProvider.getConfig().getValue("cognite.host", String.class);
     public static final String cdfProject =
             ConfigProvider.getConfig().getValue("cognite.project", String.class);
-    public static final Optional<String> apiKey =
-            ConfigProvider.getConfig().getOptionalValue("cognite.apiKey", String.class);
     public static final Optional<String> clientId =
             ConfigProvider.getConfig().getOptionalValue("cognite.clientId", String.class);
     public static final Optional<String> clientSecret =
