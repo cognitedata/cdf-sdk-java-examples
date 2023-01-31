@@ -483,10 +483,10 @@ public class BeamPipeline {
      */
     private static boolean writeExtractionPipelineRun(ExtractionPipelineRun.Status status, String message) {
         boolean writeSuccess = false;
-        if (MetAlertsCapPipelineConfig.extractionPipelineExtId.isPresent()) {
+        if (BeamPipelineConfig.extractionPipelineExtId.isPresent()) {
             try {
                 ExtractionPipelineRun pipelineRun = ExtractionPipelineRun.newBuilder()
-                        .setExternalId(MetAlertsCapPipelineConfig.extractionPipelineExtId.get())
+                        .setExternalId(BeamPipelineConfig.extractionPipelineExtId.get())
                         .setCreatedTime(Instant.now().toEpochMilli())
                         .setStatus(status)
                         .setMessage(message)
