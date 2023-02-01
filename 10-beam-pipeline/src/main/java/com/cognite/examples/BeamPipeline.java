@@ -12,7 +12,10 @@ import com.cognite.client.config.UpsertMode;
 import com.cognite.client.dto.*;
 import com.cognite.client.util.ParseValue;
 import com.google.common.collect.ImmutableList;
+import com.google.protobuf.Struct;
 import com.google.protobuf.Value;
+import com.google.protobuf.util.Structs;
+import com.google.protobuf.util.Values;
 import io.prometheus.client.CollectorRegistry;
 import io.prometheus.client.Gauge;
 import io.prometheus.client.exporter.PushGateway;
@@ -46,6 +49,7 @@ public class BeamPipeline {
      */
     private static final String appIdentifier = "my-beam-app";
     private static final String extIdPrefix = "source-name:";
+    private static final String configKeyDataSetId = "dataSetId";
 
 
     /*
@@ -101,10 +105,10 @@ public class BeamPipeline {
         private final Counter noElements = Metrics.counter(ParseRowToEventFn.class, "noElements");
 
         // Side inputs
-        final PCollectionView<Map<String, Long>> dataSetsExtIdMapView;
+        final final PCollectionView<Struct> configView;;
 
-        public ParseRowToEventFn(PCollectionView<Map<String, Long>> dataSetsExtIdMapView) {
-            this.dataSetsExtIdMapView = dataSetsExtIdMapView;
+        public ParseRowToEventFn(final PCollectionView<Struct> configView) {
+            this.configView = configView;
         }
 
         @ProcessElement
@@ -112,7 +116,7 @@ public class BeamPipeline {
                                    OutputReceiver<Event> output,
                                    ProcessContext context) throws Exception {
             noElements.inc();
-            Map<String, Long> dataSetsMap = context.sideInput(dataSetsExtIdMapView);
+            Struct configStruct = context.sideInput(configView);
             Event.Builder eventBuilder = Event.newBuilder();
             Map<String, Value> columnsMap = element.getColumns().getFieldsMap();
 
@@ -164,8 +168,9 @@ public class BeamPipeline {
             eventBuilder.putAllMetadata(metadata);
 
             // If a target dataset has been configured, add it to the event object
-            if (BeamPipelineConfig.targetDataSetExtId.isPresent() && dataSetsMap.containsKey(BeamPipelineConfig.targetDataSetExtId.get())) {
-                eventBuilder.setDataSetId(dataSetsMap.get(BeamPipelineConfig.targetDataSetExtId.get()));
+            if (configStruct.getFieldsOrDefault(configKeyDataSetId, Values.ofNull()).hasStringValue()) {
+                long dataSetId = Long.parseLong(configStruct.getFieldsOrThrow(configKeyDataSetId).getStringValue());
+                eventBuilder.setDataSetId(dataSetId);
             }
 
             // Build the event object
@@ -224,25 +229,31 @@ public class BeamPipeline {
         Pipeline p = Pipeline.create(options);
 
         /*
-        Read the CDF data sets and build an external id to internal id map.
+        Build the config object to be offered to all transforms.
+
+        The config must be created as a data object at pipeline build time so it
+        can be serialized and sent to all workers executing the pipeline.
          */
-        PCollectionView<Map<String, Long>> dataSetsExtIdMap = p
-                .apply("Read target data sets", CogniteIO.readDataSets()
-                        .withProjectConfig(getProjectConfig())
-                        .withReaderConfig(ReaderConfig.create()
-                                .withAppIdentifier(appIdentifier)
-                                .enableMetrics(false)))
-                .apply("Select externalId + id", MapElements
-                        .into(TypeDescriptors.kvs(TypeDescriptors.strings(), TypeDescriptors.longs()))
-                        .via((DataSet dataSet) -> {
-                            LOG.info("Dataset - id: {}, extId: {}, name: {}",
-                                    dataSet.getId(),
-                                    dataSet.getExternalId(),
-                                    dataSet.getName());
-                            return KV.of(dataSet.getExternalId(), dataSet.getId());
+        Struct configStruct = Structs.of(
+                configKeyDataSetId, com.google.protobuf.util.Values.ofNull()
+        );
+        if (getDataSetIntId().isPresent()) {
+            configStruct = configStruct.toBuilder()
+                    .putFields(configKeyDataSetId, Values.of(String.valueOf(getDataSetIntId().getAsLong())))
+                    .build();
+        }
+
+        /*
+        Map the config object to a view so it can be accessed by transforms.
+         */
+        PCollectionView<Struct> configView = p
+                .apply("Build Config", Create.of(configStruct))
+                .apply("Log config", MapElements.into(TypeDescriptor.of(Struct.class))
+                        .via(struct -> {
+                            LOG.info("Config object: \n{}", struct.toString());
+                            return struct;
                         }))
-                .apply("Max per key", Max.perKey())
-                .apply("To map view", View.asMap());
+                .apply("To view", View.asSingleton());
 
         /*
         Reads the existing assets from CDF--will be used for contextualization:
@@ -283,12 +294,12 @@ public class BeamPipeline {
                         .withReaderConfig(ReaderConfig.create()
                                 .withAppIdentifier(appIdentifier))
                         .withRequestParameters(RequestParameters.create()
-                                .withDbName(BeamPipelineConfig.rawDb)
-                                .withTableName(BeamPipelineConfig.rawTable)))
-                .apply("Parse row", ParDo.of(new ParseRowToEventFn(dataSetsExtIdMap))
-                        .withSideInputs(dataSetsExtIdMap))
-                .apply("Contextualize event", ParDo.of(new ContextualizeEventFn(assetsMap))
-                        .withSideInputs(assetsMap))
+                                .withDbName(rawDb)
+                                .withTableName(rawTable)))
+                .apply("Parse row", ParDo.of(new ParseRowToEventFn(configView))
+                        .withSideInputs(configView))
+                //.apply("Contextualize event", ParDo.of(new ContextualizeEventFn(assetsMap))
+                //        .withSideInputs(assetsMap))
                 .apply("Write events", CogniteIO.writeEvents()
                         .withProjectConfig(getProjectConfig())
                         .withWriterConfig(WriterConfig.create()

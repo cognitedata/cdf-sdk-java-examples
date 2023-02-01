@@ -29,7 +29,6 @@ import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
 import org.apache.beam.sdk.transforms.*;
 import org.apache.beam.sdk.values.*;
-import org.eclipse.microprofile.config.ConfigProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -72,7 +71,7 @@ public class MetAlertsCapPipeline {
     private static final String stateStoreExtId = "statestore:met-alerts-pipeline";
     private static final String lastUpdatedTimeMetadataKey = "source:lastUpdatedTime";
 
-    private static final String configKeyDataSetExtId = "dataSetExtId";
+    private static final String configKeyDataSetId = "dataSetId";
 
     // global data structures
     private static CogniteClient cogniteClient;
@@ -126,7 +125,6 @@ public class MetAlertsCapPipeline {
                                    OutputReceiver<Event> output,
                                    ProcessContext context) throws Exception {
             noElements.inc();
-            //Map<String, Long> dataSetsMap = context.sideInput(dataSetsExtIdMapView);
             Struct configStruct = context.sideInput(configView);
             Map<String, Value> columnsMap = element.getColumns().getFieldsMap();
 
@@ -178,15 +176,10 @@ public class MetAlertsCapPipeline {
             eventBuilder.putAllMetadata(metadata);
 
             // If a target dataset has been configured, add it to the event object
-            if (configStruct.getFieldsOrDefault(configKeyDataSetExtId, Values.ofNull()).hasStringValue()) {
-                long dataSetId = Long.parseLong(configStruct.getFieldsOrThrow(configKeyDataSetExtId).getStringValue());
+            if (configStruct.getFieldsOrDefault(configKeyDataSetId, Values.ofNull()).hasStringValue()) {
+                long dataSetId = Long.parseLong(configStruct.getFieldsOrThrow(configKeyDataSetId).getStringValue());
                 eventBuilder.setDataSetId(dataSetId);
             }
-            /*
-            if (targetDataSetExtId.isPresent() && dataSetsMap.containsKey(targetDataSetExtId.get())) {
-                eventBuilder.setDataSetId(dataSetsMap.get(targetDataSetExtId.get()));
-            }
-             */
 
             // Build the event object
             output.output(eventBuilder.build());
@@ -253,11 +246,11 @@ public class MetAlertsCapPipeline {
         The config must be created as a data object 
          */
         Struct configStruct = Structs.of(
-                configKeyDataSetExtId, Values.ofNull()
+                configKeyDataSetId, Values.ofNull()
         );
         if (getDataSetIntId().isPresent()) {
             configStruct = configStruct.toBuilder()
-                    .putFields(configKeyDataSetExtId, Values.of(String.valueOf(getDataSetIntId().getAsLong())))
+                    .putFields(configKeyDataSetId, Values.of(String.valueOf(getDataSetIntId().getAsLong())))
                     .build();
         }
 
@@ -359,8 +352,6 @@ public class MetAlertsCapPipeline {
                     .queryMetrics(MetricsFilter.builder()
                             .addNameFilter(MetricNameFilter.inNamespace("cognite"))
                             .build());
-
-            LOG.info("The gaugeMap key set: {}", gaugeMap.keySet());
 
             LOG.info("Log counter metrics");
             for (MetricResult<Long> counter: metrics.getCounters()) {

@@ -1,6 +1,11 @@
-## Beam data pipeline example
+## Beam data pipeline example: Raw to clean events data pipeline
 
+This example illustrates how to implement a Cognite Data Fusion "raw to clean" batch data pipeline, executed on a distributed computing runner (using [Apache Beam](https://beam.apache.org)) and package it as a container.
 
+The pipeline uses the [Apache Beam](https://beam.apache.org) framework for large scale streaming and batch pipeline support. Via the [Cognite Apache Beam connector](https://github.com/cognitedata/cdf-beam-connector-java) and [Cognite Java SDK](https://github.com/cognitedata/cdf-sdk-java) you can author extreme scale data pipelines. 
+
+For most data pipelines, a vanilla pipeline like [2-raw-to-clean-batch-job](../02-raw-to-clean-batch-job/README.md) will offer enough processing capacity. But, for extreme scenarios the `Apache Beam` framework is a useful tool:
+- If the processing logic is complex, the Beam framework gives you a DAG
 
 ## Quickstart
 
