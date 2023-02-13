@@ -30,7 +30,7 @@ On Windows Powershell:
 ### Run as a container on Kubernetes
 
 Minimum requirements for running the module on K8s:
-- Java 11 SDK: [https://adoptium.net/](https://adoptium.net/)
+- Java 17  SDK: [https://adoptium.net/](https://adoptium.net/)
 - Maven: [https://maven.apache.org/download.cgi](https://maven.apache.org/download.cgi)
 - Skaffold: [https://github.com/GoogleContainerTools/skaffold/releases](https://github.com/GoogleContainerTools/skaffold/releases)
 - Local K8s with kubectl

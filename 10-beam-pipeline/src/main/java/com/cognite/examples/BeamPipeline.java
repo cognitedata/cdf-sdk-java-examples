@@ -105,7 +105,7 @@ public class BeamPipeline {
         private final Counter noElements = Metrics.counter(ParseRowToEventFn.class, "noElements");
 
         // Side inputs
-        final final PCollectionView<Struct> configView;;
+        final PCollectionView<Struct> configView;
 
         public ParseRowToEventFn(final PCollectionView<Struct> configView) {
             this.configView = configView;
