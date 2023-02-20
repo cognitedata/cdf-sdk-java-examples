@@ -1,4 +1,4 @@
-apiVersion: skaffold/v2beta29
+apiVersion: skaffold/v4beta2
 kind: Config
 metadata:
   name: k8-demo
@@ -14,16 +14,7 @@ build:
     dateTime:                                              # The image will be tagged with the build timestamp
       format: "20060102T150405"
       timezone: "UTC"
-deploy:
+manifests:
   kustomize:
     paths:
       - ./kubernetes-manifests/
-profiles:
-  - name: ci
-    build:
-      local:
-        push: true
-    patches:
-      - op: replace
-        path: /build/artifacts/0/image
-        value: your-image-registry/k8-demo  # add your image registry as prefix here

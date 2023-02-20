@@ -1,4 +1,4 @@
-apiVersion: skaffold/v2beta29
+apiVersion: skaffold/v4beta2
 kind: Config
 build:
   tagPolicy:
@@ -8,7 +8,6 @@ build:
   - image: interactive-pnid-batch-job
     context: .
     jib: {}
-deploy:
-  kubectl:
-    manifests:
+manifests:
+  rawYaml:
     - kubernetes-manifests/interactive-pnid-batch-job.yaml
