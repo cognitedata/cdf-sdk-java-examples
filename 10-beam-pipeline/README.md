@@ -8,7 +8,23 @@ For most data pipelines, a vanilla pipeline like [2-raw-to-clean-batch-job](../0
 - If the processing logic is complex, the Beam framework gives you a DAG construct which helps organize your code and ease monitoring and debugging of a complex pipeline.
 - In case of high performance requirements, possibly in combination with high data-volume. `Apache Beam` is a distributed compute framework which can (dynamically) scale to handle extreme requirements.
 
+### Anatomy of a Beam pipeline
 
+```mermaid
+flowchart LR
+    subgraph k8 [Kubernetes]
+        direction TB
+        1A(Pipeline definition)
+        1B(Config)
+        1B --> |pipeline configuration| 1A
+    end
+    subgraph beam [Beam Runner]
+        2A(Pipeline execution)
+    end
+    
+    1A -->|Start pipeline| 2A
+    2A -->|report status| 1A
+```
 
 ## Quickstart
 
