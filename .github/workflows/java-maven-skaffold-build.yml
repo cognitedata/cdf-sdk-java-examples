@@ -28,7 +28,7 @@ jobs:
           distribution: "temurin"
           cache: "maven"
       - name: Build image with Skaffold
-        uses: hiberbee/github-action-skaffold@1.24.0
+        uses: hiberbee/github-action-skaffold@1.25.0
         with:
           working-directory: ${{ inputs.repositoryFolder }}
           command: build
