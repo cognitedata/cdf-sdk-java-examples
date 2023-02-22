@@ -16,7 +16,7 @@
         <beam.version>2.45.0</beam.version>
         <beam.connector.version>0.9.42</beam.connector.version>
 
-        <slf4j-api.version>2.0.5</slf4j-api.version>
+        <slf4j-api.version>2.0.6</slf4j-api.version>
         <logback-classic.version>1.4.5</logback-classic.version>
         <smallrye.config.version>2.13.0</smallrye.config.version>
         <io.prometheus.version>0.16.0</io.prometheus.version>
