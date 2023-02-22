@@ -20,7 +20,7 @@ The `Beam Runner` reports back its status regularly, so you can monitor counters
 flowchart LR
     subgraph k8 [Kubernetes]
         direction TB
-        1A(Config)
+        1A{{Config}}
         1B(Pipeline definition / driver)
         1A --> |pipeline configuration| 1B
     end
@@ -28,11 +28,39 @@ flowchart LR
         2A(Pipeline execution)
     end
     
-    1B -->|Start pipeline| 2A
-    2A -->|report status| 1B
+    1B --->|Start pipeline| 2A
+    2A --->|report status| 1B
 ```
 
-### 
+### Beam design patterns
+
+The Beam pipeline definition module (i.e. your code) has a set of standard building blocks:
+- The configuration support (i.e. config file via `Smallrye config`) is a separate class. This is due to serializing and running the pipeline on the remote `Beam Runner`. If we host the config variables in the same class as the pipeline definition, we will generate errors on the runner.
+- The `global settings` in the pipeline definition class hosts central variables (like `app name`, `schema definitions`, etc.).
+- The `utility methods` help configure the pipeline. They are not used to process data. They are very similar to the utility methods of a vanilla pipeline (set up the client credentials, etc.).
+- The `pipeline definition` section is the core part of code. It hosts the pipeline structure expressed using `Apache Beam` primitives. 
+- The `transform definitions` are sometimes embedded inline in the `pipeline definitions` section (for simple pipelines) or defined as explicit modules for improved readability.
+
+```mermaid
+flowchart LR
+    subgraph driver [Pipeline Definition Class]
+        direction BT
+        1A{{Global settings}}
+        1B(Transform definitions)
+        1C(Pipeline definition)
+        1D(Supporting utility methods)
+        1C -->|references| 1B
+        1D -->|produces| 1C
+        1D -->|consumes| 1A
+        1C -->|consumes| 1A
+        1B -->|consumes| 1A
+    end
+    subgraph config [Config Class]
+        direction TB
+        2A(Config variables)
+    end
+    config -->|read config variables| driver
+```
 
 
 ## Quickstart
