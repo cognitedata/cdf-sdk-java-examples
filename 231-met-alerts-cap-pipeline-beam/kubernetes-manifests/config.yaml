@@ -4,15 +4,15 @@
 # Information about the Cognite Data Fusion (CDF) project
 cognite:
   # (Optional) CDF deployment target
-  host: "https://api.cognitedata.com"
+  host: "https://greenfield.cognitedata.com"
 
   # CDF project
-  project:
+  project: "kjetilh-greenfield"
   # OpenID Connect client credentials authentication
-  clientId:
+  clientId: "632ac8e6-0b02-423e-b2ab-e1da4f2a1724"
   # The client secret should be specified via an env. variable COGNITE_CLIENTSECRET
   clientSecret:
-  azureADTenantId:
+  azureADTenantId: "445b2055-5094-4672-9cab-d37920dac4e2"
 
 # Source raw db and table to read source data from.
 source:

@@ -29,7 +29,6 @@ import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
 import org.apache.beam.sdk.transforms.*;
 import org.apache.beam.sdk.values.*;
-import org.eclipse.microprofile.config.ConfigProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -48,16 +47,6 @@ public class MetAlertsCapPipeline {
     All configuration settings from file or env variables are hosted in a separate
     config class: MetAlertsCapPipelineConfig
      */
-
-    /*
-    Metrics target configuration. From config file / env variables.
-     */
-    private static final boolean enableMetrics =
-            ConfigProvider.getConfig().getValue("metrics.enable", Boolean.class);
-    private static final String metricsJobName =
-            ConfigProvider.getConfig().getValue("metrics.jobName", String.class);
-    private static final Optional<String> pushGatewayUrl =
-            ConfigProvider.getConfig().getOptionalValue("metrics.pushGateway.url", String.class);
 
     /*
     Metrics section. Define the metrics to expose.
@@ -82,7 +71,7 @@ public class MetAlertsCapPipeline {
     private static final String stateStoreExtId = "statestore:met-alerts-pipeline";
     private static final String lastUpdatedTimeMetadataKey = "source:lastUpdatedTime";
 
-    private static final String configKeyDataSetExtId = "dataSetExtId";
+    private static final String configKeyDataSetId = "dataSetId";
 
     // global data structures
     private static CogniteClient cogniteClient;
@@ -136,7 +125,6 @@ public class MetAlertsCapPipeline {
                                    OutputReceiver<Event> output,
                                    ProcessContext context) throws Exception {
             noElements.inc();
-            //Map<String, Long> dataSetsMap = context.sideInput(dataSetsExtIdMapView);
             Struct configStruct = context.sideInput(configView);
             Map<String, Value> columnsMap = element.getColumns().getFieldsMap();
 
@@ -188,15 +176,10 @@ public class MetAlertsCapPipeline {
             eventBuilder.putAllMetadata(metadata);
 
             // If a target dataset has been configured, add it to the event object
-            if (configStruct.getFieldsOrDefault(configKeyDataSetExtId, Values.ofNull()).hasStringValue()) {
-                long dataSetId = Long.parseLong(configStruct.getFieldsOrThrow(configKeyDataSetExtId).getStringValue());
+            if (configStruct.getFieldsOrDefault(configKeyDataSetId, Values.ofNull()).hasStringValue()) {
+                long dataSetId = Long.parseLong(configStruct.getFieldsOrThrow(configKeyDataSetId).getStringValue());
                 eventBuilder.setDataSetId(dataSetId);
             }
-            /*
-            if (targetDataSetExtId.isPresent() && dataSetsMap.containsKey(targetDataSetExtId.get())) {
-                eventBuilder.setDataSetId(dataSetsMap.get(targetDataSetExtId.get()));
-            }
-             */
 
             // Build the event object
             output.output(eventBuilder.build());
@@ -263,11 +246,11 @@ public class MetAlertsCapPipeline {
         The config must be created as a data object 
          */
         Struct configStruct = Structs.of(
-                configKeyDataSetExtId, Values.ofNull()
+                configKeyDataSetId, Values.ofNull()
         );
         if (getDataSetIntId().isPresent()) {
             configStruct = configStruct.toBuilder()
-                    .putFields(configKeyDataSetExtId, Values.of(String.valueOf(getDataSetIntId().getAsLong())))
+                    .putFields(configKeyDataSetId, Values.of(String.valueOf(getDataSetIntId().getAsLong())))
                     .build();
         }
 
@@ -362,7 +345,7 @@ public class MetAlertsCapPipeline {
 
             LOG.info("Collect metrics from the Beam pipeline");
             Map<String, Gauge> gaugeMap = Map.of(
-                    "cognite" + ":" + "noElements", noElementsGauge
+                    "noElements", noElementsGauge
             );
             MetricQueryResults metrics = result
                     .metrics()
@@ -370,14 +353,18 @@ public class MetAlertsCapPipeline {
                             .addNameFilter(MetricNameFilter.inNamespace("cognite"))
                             .build());
 
+            LOG.info("Log counter metrics");
             for (MetricResult<Long> counter: metrics.getCounters()) {
-                LOG.info(counter.getName() + ":" + counter.getCommitted());
-                if (gaugeMap.containsKey(counter.getName())) {
-                    gaugeMap.get(counter.getName()).set(counter.getCommitted());
+                LOG.info(counter.getName().getName() + ":" + counter.getAttempted());
+                if (gaugeMap.containsKey(counter.getName().getName())) {
+                    LOG.info("Got a match on a counter. Will add to prom metrics");
+                    gaugeMap.get(counter.getName().getName()).set(counter.getAttempted());
                 }
             }
+
+            LOG.info("Log distribution metrics");
             for (MetricResult<DistributionResult> distribution : metrics.getDistributions()) {
-                LOG.info(distribution.getName() + ":" + distribution.getCommitted().getMean());
+                LOG.info(distribution.getName().getName() + ":" + distribution.getAttempted().getMean());
             }
 
             // All done
@@ -409,7 +396,7 @@ public class MetAlertsCapPipeline {
                         String.format("Job failed: %s", e.getMessage()));
             }
         } finally {
-            if (enableMetrics) {
+            if (MetAlertsCapPipelineConfig.enableMetrics) {
                 pushMetrics();
             }
             if (jobFailed) {
@@ -542,11 +529,11 @@ public class MetAlertsCapPipeline {
      */
     private static boolean pushMetrics() {
         boolean isSuccess = false;
-        if (pushGatewayUrl.isPresent()) {
+        if (MetAlertsCapPipelineConfig.pushGatewayUrl.isPresent()) {
             try {
-                LOG.info("Pushing metrics to {}", pushGatewayUrl);
-                PushGateway pg = new PushGateway(new URL(pushGatewayUrl.get())); //9091
-                pg.pushAdd(collectorRegistry, metricsJobName);
+                LOG.info("Pushing metrics to {}", MetAlertsCapPipelineConfig.pushGatewayUrl);
+                PushGateway pg = new PushGateway(new URL(MetAlertsCapPipelineConfig.pushGatewayUrl.get())); //9091
+                pg.pushAdd(collectorRegistry, MetAlertsCapPipelineConfig.metricsJobName);
                 isSuccess = true;
             } catch (Exception e) {
                 LOG.warn("Error when trying to push metrics: {}", e.toString());

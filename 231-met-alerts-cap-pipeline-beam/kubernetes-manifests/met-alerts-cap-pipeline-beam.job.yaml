@@ -10,7 +10,7 @@ spec:
       - name: met-alerts-cap-pipeline-beam
         image: met-alerts-cap-pipeline-beam
         args:
-          - --runner=FlinkRunner
+          #- --runner=FlinkRunner
         ports:
         - containerPort: 9090
         env:
