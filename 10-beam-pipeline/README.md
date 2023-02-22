@@ -10,11 +10,17 @@ For most data pipelines, a vanilla pipeline like [2-raw-to-clean-batch-job](../0
 
 ### Anatomy of a Beam pipeline
 
+The `configuration` and `pipeline definition` are run as k8s jobs. This is very similar to how you set up a plain pipeline like [2-raw-to-clean-batch-job](../02-raw-to-clean-batch-job/README.md). The main difference being that you use the `Beam framework` as building blocks for your pipeline.
+
+Your `k8s` jobb will build the `Beam pipeline` definition and submit it to a `Beam Runner` (for example, Google Dataflow or Apache Flink) where it is executed. 
+
+The `Beam Runner` reports back its status regularly, so you can monitor counters, status, etc. When the `Beam Runner` completes the job, it reports back to your `k8s job` which also finishes by reporting metrics and other housekeeping tasks.
+
 ```mermaid
 flowchart LR
     subgraph k8 [Kubernetes]
         direction TB
-        1A(Pipeline definition)
+        1A(Pipeline definition / driver)
         1B(Config)
         1B --> |pipeline configuration| 1A
     end
