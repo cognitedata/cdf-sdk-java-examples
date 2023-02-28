@@ -5,10 +5,18 @@ metadata:
 data:
   config.yaml: |
     # Default config settings
-    cdf:
-      authentication:
-        apiKey:
-        apiKeyGcp: ""
+    # Information about the Cognite Data Fusion (CDF) project
+    cognite:
+      # (Optional) CDF deployment target
+      host: "https://api.cognitedata.com"
+    
+      # CDF project
+      project:
+      # OpenID Connect client credentials authentication
+      clientId:
+      # The client secret should be specified via an env. variable COGNITE_CLIENTSECRET
+      clientSecret:
+      azureADTenantId:
 
     source:
       rawDb: "sap-extract"
