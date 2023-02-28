@@ -8,10 +8,6 @@ cognite:
 
   # CDF project
   project:
-
-  # Api key authentication. You can also specify this entry via an env. variable COGNITE_APIKEY
-  apiKey:
-
   # OpenID Connect client credentials authentication
   clientId:
   # The client secret should be specified via an env. variable COGNITE_CLIENTSECRET

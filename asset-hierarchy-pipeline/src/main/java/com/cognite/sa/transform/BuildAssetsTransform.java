@@ -2,6 +2,7 @@ package com.cognite.sa.transform;
 
 import com.cognite.client.CogniteClient;
 import com.cognite.client.config.ClientConfig;
+import com.cognite.client.config.TokenUrl;
 import com.cognite.client.config.UpsertMode;
 import com.cognite.client.dto.Asset;
 import com.cognite.client.dto.Label;
@@ -31,11 +32,19 @@ import java.util.stream.Collectors;
 public class BuildAssetsTransform {
     private static Logger LOG = LoggerFactory.getLogger(BuildAssetsTransform.class);
 
-    // cdf auth config
-    private static final Optional<String> apiKey =
-            ConfigProvider.getConfig().getOptionalValue("cdf.authentication.apiKey", String.class);
-    private static final Optional<String> apiKeyGcp =
-            ConfigProvider.getConfig().getOptionalValue("cdf.authentication.apiKeyGcp", String.class);
+    /*
+    CDF project config. From config file / env variables.
+     */
+    private static final String cdfHost =
+            ConfigProvider.getConfig().getValue("cognite.host", String.class);
+    private static final String cdfProject =
+            ConfigProvider.getConfig().getValue("cognite.project", String.class);
+    private static final String clientId =
+            ConfigProvider.getConfig().getValue("cognite.clientId", String.class);
+    private static final String clientSecret =
+            ConfigProvider.getConfig().getValue("cognite.clientSecret", String.class);
+    private static final String aadTenantId =
+            ConfigProvider.getConfig().getValue("cognite.azureADTenantId", String.class);
 
     // raw source tables
     private static final String rawDb = ConfigProvider.getConfig().getValue("source.rawDb", String.class);
@@ -455,26 +464,20 @@ public class BuildAssetsTransform {
     }
 
     /*
-    Builds the cognite client.
-     */
-    private CogniteClient getCogniteClient() throws Exception {
-        if (null == cogniteClient) {
-            String key = "";
-            if (apiKeyGcp.isPresent()) {
-                LOG.info("Getting api key from GCP Secret Manager.");
-                key = getGcpSecret(apiKeyGcp.get().split("\\.")[0],
-                        apiKeyGcp.get().split("\\.")[1],
-                        "latest");
-            }
-            if (apiKey.isPresent()) {
-                LOG.info("Getting api key from env variable or system properties.");
-                key = apiKey.get();
-            }
+    Return the Cognite client.
 
-            cogniteClient = CogniteClient.ofKey(key)
-                    .withBaseUrl("https://greenfield.cognitedata.com")
-                    .withClientConfig(ClientConfig.create()
-                            .withUpsertMode(UpsertMode.REPLACE));
+    If the client isn't instantiated, it will be created according to the configured authentication options. After the
+    initial instantiation, the client will be cached and reused.
+     */
+    private static CogniteClient getCogniteClient() throws Exception {
+        if (null == cogniteClient) {
+            // The client has not been instantiated yet
+            cogniteClient = CogniteClient.ofClientCredentials(
+                            cdfProject,
+                            clientId,
+                            clientSecret,
+                            TokenUrl.generateAzureAdURL(aadTenantId))
+                    .withBaseUrl(cdfHost);
         }
 
         return cogniteClient;

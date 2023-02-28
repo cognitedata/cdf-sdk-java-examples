@@ -417,10 +417,10 @@ public class RawToClean {
         if (null == cogniteClient) {
             // The client has not been instantiated yet
             cogniteClient = CogniteClient.ofClientCredentials(
+                            cdfProject,
                             clientId,
                             clientSecret,
                             TokenUrl.generateAzureAdURL(aadTenantId))
-                    .withProject(cdfProject)
                     .withBaseUrl(cdfHost);
         }
 
