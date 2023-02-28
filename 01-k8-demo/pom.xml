@@ -17,7 +17,7 @@
         <maven.compiler.target>17</maven.compiler.target>
         <maven.compiler.release>17</maven.compiler.release>
 
-        <cdf-sdk-java.version>1.19.1</cdf-sdk-java.version>
+        <cdf-sdk-java.version>2.0.0</cdf-sdk-java.version>
         <slf4j-api.version>2.0.6</slf4j-api.version>
         <logback-classic.version>1.4.5</logback-classic.version>
         <smallrye.config.version>2.13.3</smallrye.config.version>
