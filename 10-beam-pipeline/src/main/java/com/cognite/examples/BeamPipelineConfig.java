@@ -12,12 +12,12 @@ public class BeamPipelineConfig {
             ConfigProvider.getConfig().getValue("cognite.host", String.class);
     public static final String cdfProject =
             ConfigProvider.getConfig().getValue("cognite.project", String.class);
-    public static final Optional<String> clientId =
-            ConfigProvider.getConfig().getOptionalValue("cognite.clientId", String.class);
-    public static final Optional<String> clientSecret =
-            ConfigProvider.getConfig().getOptionalValue("cognite.clientSecret", String.class);
-    public static final Optional<String> aadTenantId =
-            ConfigProvider.getConfig().getOptionalValue("cognite.azureADTenantId", String.class);
+    public static final String clientId =
+            ConfigProvider.getConfig().getValue("cognite.clientId", String.class);
+    public static final String clientSecret =
+            ConfigProvider.getConfig().getValue("cognite.clientSecret", String.class);
+    public static final String aadTenantId =
+            ConfigProvider.getConfig().getValue("cognite.azureADTenantId", String.class);
 
     /*
     CDF.Raw source table configuration. From config file / env variables.

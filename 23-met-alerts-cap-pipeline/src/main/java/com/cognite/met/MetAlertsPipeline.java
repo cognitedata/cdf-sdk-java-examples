@@ -413,17 +413,12 @@ public class MetAlertsPipeline {
     private static CogniteClient getCogniteClient() throws Exception {
         if (null == cogniteClient) {
             // The client has not been instantiated yet
-            ClientConfig clientConfig = ClientConfig.create()
-                    .withUpsertMode(UpsertMode.REPLACE)
-                    .withAppIdentifier(appIdentifier);
-
             cogniteClient = CogniteClient.ofClientCredentials(
+                            cdfProject,
                             clientId,
                             clientSecret,
                             TokenUrl.generateAzureAdURL(aadTenantId))
-                    .withProject(cdfProject)
-                    .withBaseUrl(cdfHost)
-                    .withClientConfig(clientConfig);
+                    .withBaseUrl(cdfHost);
         }
 
         return cogniteClient;
