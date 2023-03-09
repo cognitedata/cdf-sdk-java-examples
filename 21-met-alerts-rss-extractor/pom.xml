@@ -19,7 +19,7 @@
         <logback-classic.version>1.4.5</logback-classic.version>
         <smallrye.config.version>2.13.3</smallrye.config.version>
         <io.prometheus.version>0.16.0</io.prometheus.version>
-        <rssreader.version>3.4.0</rssreader.version>
+        <rssreader.version>3.4.3</rssreader.version>
         <jib.maven.plugin.version>3.3.1</jib.maven.plugin.version>
     </properties>
 
