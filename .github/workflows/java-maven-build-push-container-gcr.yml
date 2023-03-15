@@ -47,7 +47,7 @@ jobs:
         run: gcloud auth configure-docker europe-docker.pkg.dev # (1)
 
       - name: Build image with Skaffold
-        uses: hiberbee/github-action-skaffold@1.25.0
+        uses: hiberbee/github-action-skaffold@1.26.0
         with:
           skaffold-version: 2.1.0
           working-directory: ${{ inputs.repositoryFolder }}
