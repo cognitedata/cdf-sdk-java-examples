@@ -20,7 +20,7 @@
         <smallrye.config.version>2.13.3</smallrye.config.version>
         <io.prometheus.version>0.16.0</io.prometheus.version>
         <jackson-dataformat-xml.version>2.14.2</jackson-dataformat-xml.version>
-        <junit.version>5.9.2</junit.version>
+        <junit.version>5.9.3</junit.version>
         <jib.maven.plugin.version>3.3.1</jib.maven.plugin.version>
     </properties>
 
