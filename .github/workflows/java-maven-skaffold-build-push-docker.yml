@@ -33,7 +33,7 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
       - name: Build image with Skaffold
-        uses: hiberbee/github-action-skaffold@1.26.0
+        uses: hiberbee/github-action-skaffold@1.27.0
         with:
           skaffold-version: 2.1.0
           working-directory: ${{ inputs.repositoryFolder }}
