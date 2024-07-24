@@ -15,7 +15,7 @@
         <maven.compiler.target>11</maven.compiler.target>
 
         <cdf-sdk-java.version>2.1.0</cdf-sdk-java.version>
-        <pdfbox.version>2.0.28</pdfbox.version>
+        <pdfbox.version>2.0.32</pdfbox.version>
         <logback.classic.version>1.4.8</logback.classic.version>
         <jib.maven.plugin.version>3.3.2</jib.maven.plugin.version>
     </properties>
