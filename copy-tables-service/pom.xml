@@ -14,7 +14,7 @@
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 
-    <cdf-sdk-java.version>2.1.0</cdf-sdk-java.version>
+    <cdf-sdk-java.version>2.3.2</cdf-sdk-java.version>
 
     <quarkus-plugin.version>2.16.7.Final</quarkus-plugin.version>
     <quarkus.platform.artifact-id>quarkus-universe-bom</quarkus.platform.artifact-id>
