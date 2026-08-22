@@ -18,7 +18,7 @@
         <beam.connector.version>0.9.45</beam.connector.version>
 
         <slf4j-api.version>2.0.7</slf4j-api.version>
-        <logback-classic.version>1.4.8</logback-classic.version>
+        <logback-classic.version>1.4.12</logback-classic.version>
         <smallrye.config.version>2.13.3</smallrye.config.version>
         <io.prometheus.version>0.16.0</io.prometheus.version>
         <jib.maven.plugin.version>3.3.2</jib.maven.plugin.version>
